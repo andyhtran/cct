@@ -153,11 +153,11 @@ func TestExtractTextFromContent(t *testing.T) {
 
 	t.Run("respects max recursion depth", func(t *testing.T) {
 		// Build a structure deeper than maxExtractDepth
-		var inner any = map[string]any{"type": "text", "text": "deep"}
+		inner := map[string]any{"type": "text", "text": "deep"}
 		for i := 0; i < maxExtractDepth+5; i++ {
 			inner = map[string]any{"type": "wrapper", "content": inner}
 		}
-		content := []any{inner.(map[string]any)}
+		content := []any{inner}
 		got := ExtractTextFromContent(content)
 		if got != "" {
 			t.Errorf("expected empty beyond max depth, got %q", got)
