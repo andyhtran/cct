@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -86,6 +87,80 @@ func TestExtractTextFromContent(t *testing.T) {
 		got := ExtractTextFromContent(content)
 		if got != "visible" {
 			t.Errorf("got %q, want %q", got, "visible")
+		}
+	})
+
+	t.Run("tool_result with string content", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "tu1", "content": "database_url=postgres://localhost"},
+		}
+		got := ExtractTextFromContent(content)
+		if got != "database_url=postgres://localhost" {
+			t.Errorf("got %q, want %q", got, "database_url=postgres://localhost")
+		}
+	})
+
+	t.Run("tool_result with array content", func(t *testing.T) {
+		content := []any{
+			map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": "tu1",
+				"content": []any{
+					map[string]any{"type": "text", "text": "agent response"},
+					map[string]any{"type": "image", "source": map[string]any{}},
+				},
+			},
+		}
+		got := ExtractTextFromContent(content)
+		if got != "agent response" {
+			t.Errorf("got %q, want %q", got, "agent response")
+		}
+	})
+
+	t.Run("tool_result with base64-like content", func(t *testing.T) {
+		longBase64 := strings.Repeat("AAAA", 300) // 1200 chars, no spaces
+		content := []any{
+			map[string]any{"type": "tool_result", "tool_use_id": "tu1", "content": longBase64},
+		}
+		got := ExtractTextFromContent(content)
+		if got != "" {
+			t.Errorf("expected empty for base64-like content, got %d chars", len(got))
+		}
+	})
+
+	t.Run("skips redacted_thinking and document", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "redacted_thinking", "data": "base64stuff"},
+			map[string]any{"type": "document", "source": map[string]any{}},
+			map[string]any{"type": "text", "text": "visible"},
+		}
+		got := ExtractTextFromContent(content)
+		if got != "visible" {
+			t.Errorf("got %q, want %q", got, "visible")
+		}
+	})
+
+	t.Run("mixed text and tool_result", func(t *testing.T) {
+		content := []any{
+			map[string]any{"type": "text", "text": "I found the config"},
+			map[string]any{"type": "tool_result", "tool_use_id": "tu1", "content": "port=5432"},
+		}
+		got := ExtractTextFromContent(content)
+		if got != "I found the config port=5432" {
+			t.Errorf("got %q, want %q", got, "I found the config port=5432")
+		}
+	})
+
+	t.Run("respects max recursion depth", func(t *testing.T) {
+		// Build a structure deeper than maxExtractDepth
+		var inner any = map[string]any{"type": "text", "text": "deep"}
+		for i := 0; i < maxExtractDepth+5; i++ {
+			inner = map[string]any{"type": "wrapper", "content": inner}
+		}
+		content := []any{inner.(map[string]any)}
+		got := ExtractTextFromContent(content)
+		if got != "" {
+			t.Errorf("expected empty beyond max depth, got %q", got)
 		}
 	})
 }

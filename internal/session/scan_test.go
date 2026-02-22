@@ -176,6 +176,36 @@ func TestSearchFiles(t *testing.T) {
 	})
 }
 
+func TestSearchFiles_ToolResult(t *testing.T) {
+	home := setupTestHome(t)
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-proj")
+
+	writeSessionFile(t, projDir, "tool-001", []string{
+		`{"type":"user","message":{"role":"user","content":"read the config"},"cwd":"/test","sessionId":"tool-001","timestamp":"2026-01-10T08:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{}},{"type":"tool_result","tool_use_id":"tu1","content":"database_url=postgres://localhost"}]},"timestamp":"2026-01-10T08:00:05Z"}`,
+	})
+
+	files := DiscoverFiles("")
+
+	t.Run("finds text in tool_result content", func(t *testing.T) {
+		results := SearchFiles(files, "postgres", 80)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if len(results[0].Matches) == 0 {
+			t.Error("expected at least 1 match snippet")
+		}
+	})
+
+	t.Run("still skips tool_use", func(t *testing.T) {
+		// "Read" only appears inside tool_use which should be skipped
+		results := SearchFiles(files, "\"name\":\"Read\"", 80)
+		if len(results) != 0 {
+			t.Errorf("expected 0 results for tool_use content, got %d", len(results))
+		}
+	})
+}
+
 func TestSearchFiles_MaxMatches(t *testing.T) {
 	home := setupTestHome(t)
 	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-proj")
