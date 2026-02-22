@@ -1,0 +1,5 @@
+/cct
+/dist/
+/dist-*/
+*.test
+coverage.out
