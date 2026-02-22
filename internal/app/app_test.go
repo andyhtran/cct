@@ -322,7 +322,7 @@ func TestExportCmd(t *testing.T) {
 		}
 	})
 
-	if len(out) == 0 {
+	if out == "" {
 		t.Fatal("expected markdown output")
 	}
 	if !bytes.Contains([]byte(out), []byte("# Session")) {
@@ -375,7 +375,7 @@ func TestResumeCmd_DryRun(t *testing.T) {
 		}
 	})
 
-	if len(out) == 0 {
+	if out == "" {
 		t.Fatal("expected dry-run output")
 	}
 	if !bytes.Contains([]byte(out), []byte("claude --resume")) {
