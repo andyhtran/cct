@@ -62,37 +62,73 @@ func ExtractPromptText(obj map[string]any) string {
 	return ExtractTextFromContent(msg["content"])
 }
 
-// Content can be either a plain string or an array of content blocks.
+// skipTypes lists content block types that never contain searchable text.
+var skipTypes = map[string]bool{
+	"thinking":          true,
+	"redacted_thinking": true,
+	"image":             true,
+	"document":          true,
+	"tool_use":          true,
+}
+
+const maxExtractDepth = 10
+
+// ExtractTextFromContent recursively extracts searchable text from message content.
+// Content can be a plain string, an array of content blocks, or a single block object.
+// Blocks may nest content via a "content" field (e.g. tool_result blocks).
 func ExtractTextFromContent(content any) string {
-	if content == nil {
+	return extractText(content, 0)
+}
+
+func extractText(content any, depth int) string {
+	if depth > maxExtractDepth || content == nil {
 		return ""
 	}
 	if str, ok := content.(string); ok {
+		if isBase64Like(str) {
+			return ""
+		}
 		return str
+	}
+	if obj, ok := content.(map[string]any); ok {
+		return extractBlockText(obj, depth)
 	}
 	arr, ok := content.([]any)
 	if !ok {
 		return ""
 	}
-
 	var parts []string
 	for _, item := range arr {
 		block, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		blockType, _ := block["type"].(string)
-		if blockType == "thinking" || blockType == "image" || blockType == "tool_use" {
-			continue
-		}
-		if text, ok := block["text"].(string); ok && text != "" {
-			if len(text) > 1000 && !strings.Contains(text[:1000], " ") {
-				continue // Skip base64-like data
-			}
-			parts = append(parts, text)
+		if s := extractBlockText(block, depth); s != "" {
+			parts = append(parts, s)
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+func extractBlockText(block map[string]any, depth int) string {
+	blockType, _ := block["type"].(string)
+	if skipTypes[blockType] {
+		return ""
+	}
+	var parts []string
+	if text, ok := block["text"].(string); ok && text != "" && !isBase64Like(text) {
+		parts = append(parts, text)
+	}
+	if c, exists := block["content"]; exists {
+		if s := extractText(c, depth+1); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func isBase64Like(s string) bool {
+	return len(s) > 1000 && !strings.Contains(s[:1000], " ")
 }
 
 func ParseTimestamp(obj map[string]any) time.Time {

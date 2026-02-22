@@ -41,3 +41,7 @@ fmt:
 [group('dev')]
 fmt-check:
     test -z "$(gofumpt -l .)"
+
+# Run the full CI gate locally (format, lint, test)
+[group('dev')]
+ci: fmt-check lint test
