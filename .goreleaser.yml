@@ -46,6 +46,18 @@ changelog:
       - Merge pull request
       - Merge branch
 
+brews:
+  - repository:
+      owner: andyhtran
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/andyhtran/cct
+    description: Browse, search, and manage Claude Code session history from the terminal
+    license: MIT
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/cct version")
+
 release:
   github:
     owner: andyhtran
