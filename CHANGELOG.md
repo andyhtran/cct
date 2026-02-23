@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-22
+
+### Fixed
+
+- Search and export now find text inside tool result content blocks (AskUserQuestion answers, file reads, command outputs, sub-agent responses)
+
+### Changed
+
+- Replaced flat content extraction with recursive design that follows nested `text` and `content` fields, with an explicit skip list for non-text types
+
+## [0.1.0] - 2026-02-22
+
 ### Added
 
 - `cct list` — browse Claude Code sessions, sorted by recency
