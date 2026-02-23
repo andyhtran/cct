@@ -27,6 +27,13 @@ go build -o dist/cct ./cmd/cct
 ./dist/cct --help
 ```
 
+## Update
+
+```bash
+brew update
+brew upgrade cct
+```
+
 ## Commands
 
 ### Browse sessions
