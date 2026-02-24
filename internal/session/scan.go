@@ -98,7 +98,7 @@ func ScanFiles(files []string, fullParse bool) []*Session {
 	return sessions
 }
 
-func SearchFiles(files []string, keyword string, snippetWidth int) []*SearchResult {
+func SearchFiles(files []string, keyword string, snippetWidth int, maxMatches int) []*SearchResult {
 	keyLower := strings.ToLower(keyword)
 	numWorkers := runtime.NumCPU()
 	jobs := make(chan string, len(files))
@@ -110,7 +110,7 @@ func SearchFiles(files []string, keyword string, snippetWidth int) []*SearchResu
 		go func() {
 			defer wg.Done()
 			for path := range jobs {
-				r := searchOneFile(path, keyLower, snippetWidth)
+				r := searchOneFile(path, keyLower, snippetWidth, maxMatches)
 				if r != nil {
 					results <- r
 				}
@@ -135,7 +135,7 @@ func SearchFiles(files []string, keyword string, snippetWidth int) []*SearchResu
 	return out
 }
 
-func searchOneFile(path, keyLower string, snippetWidth int) *SearchResult {
+func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *SearchResult {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
@@ -156,7 +156,6 @@ func searchOneFile(path, keyLower string, snippetWidth int) *SearchResult {
 	scanner := NewJSONLScanner(f)
 
 	var matches []string
-	const maxMatches = 3
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -175,7 +174,7 @@ func searchOneFile(path, keyLower string, snippetWidth int) *SearchResult {
 			extractUserMetadata(s, obj)
 		}
 
-		if len(matches) >= maxMatches {
+		if maxMatches > 0 && len(matches) >= maxMatches {
 			continue
 		}
 

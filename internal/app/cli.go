@@ -22,13 +22,14 @@ type CLI struct {
 	Default     DefaultCmd   `cmd:"" default:"noargs" hidden:""`
 	List        ListCmd      `cmd:"" help:"List recent sessions"`
 	Search      SearchCmd    `cmd:"" help:"Search session content"`
-	Info        InfoCmd      `cmd:"" help:"Show session details"`
+	Info        InfoCmd      `cmd:"" help:"Show session metadata and first prompt"`
 	Resume      ResumeCmd    `cmd:"" help:"Resume a session (auto-switches directory)"`
-	Export      ExportCmd    `cmd:"" help:"Export session as markdown"`
+	Export      ExportCmd    `cmd:"" help:"Export session messages (with filtering)"`
 	Plans       PlansCmd     `cmd:"" help:"Browse and search plans"`
 	Stats       StatsCmd     `cmd:"" help:"Session statistics"`
 	Changelog   ChangelogCmd `cmd:"" aliases:"log" help:"Show Claude Code changelog"`
 	VersionInfo VersionCmd   `cmd:"" name:"version" help:"Show version information"`
+	Schema      SchemaCmd    `cmd:"" help:"Show CLI schema as JSON (for tooling)"`
 }
 
 type Globals struct {
@@ -39,17 +40,27 @@ func Run(version string) int {
 	appVersion = version
 
 	var cli CLI
-	ctx := kong.Parse(&cli,
+	k, err := kong.New(&cli,
 		kong.Name("cct"),
 		kong.Description("Claude Code utility CLI"),
-		kong.UsageOnError(),
 		kong.Vars{"version": "cct " + appVersion},
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,
 		}),
 	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cct: %v\n", err)
+		return 1
+	}
 
-	err := ctx.Run(&cli.Globals)
+	ctx, err := k.Parse(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cct: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Run 'cct --help' or 'cct <command> --help' for usage.\n")
+		return 1
+	}
+
+	err = ctx.Run(&cli.Globals, k)
 	if err != nil {
 		var exitErr *ExitError
 		if errors.As(err, &exitErr) {

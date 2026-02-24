@@ -19,6 +19,12 @@ const (
 var (
 	typePrefix      = []byte(`"type":"`)
 	timestampPrefix = []byte(`"timestamp":"`)
+	// typeUser and typeAssistant are searched first because these values only
+	// appear at the top level. The generic typePrefix search can match nested
+	// types like "type":"message" in the message object, which appears before
+	// the top-level type in assistant messages.
+	typeUser      = []byte(`"type":"user"`)
+	typeAssistant = []byte(`"type":"assistant"`)
 )
 
 func NewJSONLScanner(r io.Reader) *bufio.Scanner {
@@ -28,6 +34,15 @@ func NewJSONLScanner(r io.Reader) *bufio.Scanner {
 }
 
 func FastExtractType(line []byte) string {
+	// Check for top-level message types first - these values are unique to the
+	// top level and avoid confusion with nested types like "type":"message".
+	if bytes.Contains(line, typeUser) {
+		return "user"
+	}
+	if bytes.Contains(line, typeAssistant) {
+		return "assistant"
+	}
+	// Fall back to generic extraction for other types
 	idx := bytes.Index(line, typePrefix)
 	if idx < 0 {
 		return ""

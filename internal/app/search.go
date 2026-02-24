@@ -11,8 +11,11 @@ import (
 )
 
 type SearchCmd struct {
-	Query   string `arg:"" help:"Search query"`
-	Project string `short:"p" help:"Filter by project name"`
+	Query      string `arg:"" help:"Search query"`
+	Project    string `short:"p" help:"Filter by project name"`
+	Limit      int    `short:"n" help:"Max results (0=no limit)" default:"25"`
+	All        bool   `short:"a" help:"Show all results"`
+	MaxMatches int    `short:"m" help:"Max matches per session" default:"3"`
 }
 
 func (cmd *SearchCmd) Run(globals *Globals) error {
@@ -27,11 +30,19 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 	if !globals.JSON && len(files) > 50 {
 		fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(files))
 	}
-	results := session.SearchFiles(files, cmd.Query, tbl.LastColWidth())
+	results := session.SearchFiles(files, cmd.Query, tbl.LastColWidth(), cmd.MaxMatches)
 
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Session.Modified.After(results[j].Session.Modified)
 	})
+
+	if !cmd.All && cmd.Limit > 0 && len(results) > cmd.Limit {
+		total := len(results)
+		results = results[:cmd.Limit]
+		if !globals.JSON {
+			fmt.Fprintf(os.Stderr, "Showing %d of %d results (use --all or -n to adjust)\n", cmd.Limit, total)
+		}
+	}
 
 	if len(results) == 0 {
 		fmt.Printf("  No sessions matching %q\n", cmd.Query)

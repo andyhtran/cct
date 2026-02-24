@@ -314,7 +314,7 @@ func TestExportCmd(t *testing.T) {
 	setupFixtures(t)
 
 	globals := &Globals{}
-	cmd := &ExportCmd{ID: "abcd1234"}
+	cmd := &ExportCmd{ID: "abcd1234", Role: "user,assistant"}
 
 	out := captureStdout(t, func() {
 		if err := cmd.Run(globals); err != nil {
@@ -343,7 +343,7 @@ func TestExportCmd_ToFile(t *testing.T) {
 	outFile := filepath.Join(outDir, "export.md")
 
 	globals := &Globals{}
-	cmd := &ExportCmd{ID: "abcd1234", Output: outFile}
+	cmd := &ExportCmd{ID: "abcd1234", Output: outFile, Role: "user,assistant"}
 
 	if err := cmd.Run(globals); err != nil {
 		t.Fatal(err)

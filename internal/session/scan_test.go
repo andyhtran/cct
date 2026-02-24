@@ -152,7 +152,7 @@ func TestSearchFiles(t *testing.T) {
 	files := DiscoverFiles("")
 
 	t.Run("keyword found", func(t *testing.T) {
-		results := SearchFiles(files, "database", 80)
+		results := SearchFiles(files, "database", 80, 3)
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
@@ -162,14 +162,14 @@ func TestSearchFiles(t *testing.T) {
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		results := SearchFiles(files, "DATABASE", 80)
+		results := SearchFiles(files, "DATABASE", 80, 3)
 		if len(results) != 1 {
 			t.Errorf("expected 1 result for case-insensitive search, got %d", len(results))
 		}
 	})
 
 	t.Run("no match", func(t *testing.T) {
-		results := SearchFiles(files, "zzz_nothing_zzz", 80)
+		results := SearchFiles(files, "zzz_nothing_zzz", 80, 3)
 		if len(results) != 0 {
 			t.Errorf("expected 0 results, got %d", len(results))
 		}
@@ -188,7 +188,7 @@ func TestSearchFiles_ToolResult(t *testing.T) {
 	files := DiscoverFiles("")
 
 	t.Run("finds text in tool_result content", func(t *testing.T) {
-		results := SearchFiles(files, "postgres", 80)
+		results := SearchFiles(files, "postgres", 80, 3)
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
@@ -199,7 +199,7 @@ func TestSearchFiles_ToolResult(t *testing.T) {
 
 	t.Run("still skips tool_use", func(t *testing.T) {
 		// "Read" only appears inside tool_use which should be skipped
-		results := SearchFiles(files, "\"name\":\"Read\"", 80)
+		results := SearchFiles(files, "\"name\":\"Read\"", 80, 3)
 		if len(results) != 0 {
 			t.Errorf("expected 0 results for tool_use content, got %d", len(results))
 		}
@@ -220,7 +220,7 @@ func TestSearchFiles_MaxMatches(t *testing.T) {
 	writeSessionFile(t, projDir, "srch-max", lines)
 
 	files := DiscoverFiles("")
-	results := SearchFiles(files, "keyword", 80)
+	results := SearchFiles(files, "keyword", 80, 3)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}

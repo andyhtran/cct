@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/andyhtran/cct/internal/output"
 	"github.com/andyhtran/cct/internal/plan"
@@ -15,7 +16,11 @@ type PlansCmd struct {
 	Cp     PlansCpCmd     `cmd:"" help:"Copy a plan to current directory"`
 }
 
-type PlansListCmd struct{}
+type PlansListCmd struct {
+	Project string `short:"p" help:"Filter by project name (matches title or name)"`
+	Limit   int    `short:"n" help:"Max results (0=no limit)" default:"0"`
+	All     bool   `short:"a" help:"Show all results"`
+}
 
 func (cmd *PlansListCmd) Run(globals *Globals) error {
 	plans, err := plan.ListPlans()
@@ -23,9 +28,33 @@ func (cmd *PlansListCmd) Run(globals *Globals) error {
 		return err
 	}
 
+	if cmd.Project != "" {
+		projectLower := strings.ToLower(cmd.Project)
+		var filtered []plan.Plan
+		for _, p := range plans {
+			if strings.Contains(strings.ToLower(p.Title), projectLower) ||
+				strings.Contains(strings.ToLower(p.Name), projectLower) {
+				filtered = append(filtered, p)
+			}
+		}
+		plans = filtered
+	}
+
 	if len(plans) == 0 {
-		fmt.Println("  No plans found.")
+		if cmd.Project != "" {
+			fmt.Printf("  No plans matching project %q\n", cmd.Project)
+		} else {
+			fmt.Println("  No plans found.")
+		}
 		return nil
+	}
+
+	if !cmd.All && cmd.Limit > 0 && len(plans) > cmd.Limit {
+		total := len(plans)
+		plans = plans[:cmd.Limit]
+		if !globals.JSON {
+			fmt.Fprintf(os.Stderr, "Showing %d of %d plans (use --all or -n to adjust)\n", cmd.Limit, total)
+		}
 	}
 
 	if globals.JSON {
@@ -64,6 +93,8 @@ func (cmd *PlansListCmd) Run(globals *Globals) error {
 
 type PlansSearchCmd struct {
 	Query string `arg:"" help:"Search query"`
+	Limit int    `short:"n" help:"Max results (0=no limit)" default:"25"`
+	All   bool   `short:"a" help:"Show all results"`
 }
 
 func (cmd *PlansSearchCmd) Run(globals *Globals) error {
@@ -82,6 +113,15 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 	if len(matches) == 0 {
 		fmt.Printf("  No plans matching %q\n", cmd.Query)
 		return nil
+	}
+
+	// Apply limit
+	if !cmd.All && cmd.Limit > 0 && len(matches) > cmd.Limit {
+		total := len(matches)
+		matches = matches[:cmd.Limit]
+		if !globals.JSON {
+			fmt.Fprintf(os.Stderr, "Showing %d of %d results (use --all or -n to adjust)\n", cmd.Limit, total)
+		}
 	}
 
 	if globals.JSON {
