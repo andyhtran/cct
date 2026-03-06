@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-06
+
+### Added
+
+- `search`: multi-term AND matching — `cct search "Read search.go"` finds sessions containing all terms
+- `search`: `-C/--context` flag adds extra characters to snippet width for more surrounding context
+- `search`: `-s/--session` flag scopes search to a single session
+- `search`: `--no-agents` flag excludes sub-agent sessions
+- `search`: tool_use blocks are now searchable — file paths, bash commands, grep patterns, and URLs from tool invocations are indexed
+- `search`: matches show source labels (`[a:Read]`, `[a:Bash]`) to distinguish tool invocations from conversation text
+- `search`: role labels (`[u]`/`[a]`) on all match snippets
+- `list`/`stats`: `--agents` flag to include sub-agent sessions
+
+### Fixed
+
+- ShortID preserves full agent session IDs to avoid collisions between sub-agents sharing a parent
+- Session IDs derived from filename, not from `sessionId` field which could point to parent session
+
 ## [0.3.0] - 2026-02-24
 
 ### Added
