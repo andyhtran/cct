@@ -162,10 +162,6 @@ func extractUserMetadata(s *Session, obj map[string]any) bool {
 		s.ProjectPath, _ = obj["cwd"].(string)
 		s.ProjectName = filepath.Base(s.ProjectPath)
 		s.GitBranch, _ = obj["gitBranch"].(string)
-		if sid, ok := obj["sessionId"].(string); ok && sid != "" {
-			s.ID = sid
-			s.ShortID = ShortID(sid)
-		}
 	}
 	if s.FirstPrompt == "" {
 		s.FirstPrompt = ExtractPromptText(obj)

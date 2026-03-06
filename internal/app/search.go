@@ -26,6 +26,7 @@ func formatMatchRole(m session.Match) string {
 type SearchCmd struct {
 	Query      string `arg:"" help:"Search query"`
 	Project    string `short:"p" help:"Filter by project name"`
+	Session    string `short:"s" help:"Search within a specific session (ID or prefix)"`
 	Limit      int    `short:"n" help:"Max results (0=no limit)" default:"25"`
 	All        bool   `short:"a" help:"Show all results"`
 	MaxMatches int    `short:"m" help:"Max matches per session" default:"3"`
@@ -39,9 +40,18 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 		output.Flex("MATCH", 0, 30),
 	)
 
-	files := session.DiscoverFiles(cmd.Project)
-	if !globals.JSON && len(files) > 50 {
-		fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(files))
+	var files []string
+	if cmd.Session != "" {
+		s, err := session.FindByPrefix(cmd.Session)
+		if err != nil {
+			return err
+		}
+		files = []string{s.FilePath}
+	} else {
+		files = session.DiscoverFiles(cmd.Project)
+		if !globals.JSON && len(files) > 50 {
+			fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(files))
+		}
 	}
 	results := session.SearchFiles(files, cmd.Query, tbl.LastColWidth(), cmd.MaxMatches)
 

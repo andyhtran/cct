@@ -193,8 +193,8 @@ func TestExtractMetadata(t *testing.T) {
 		t.Fatal("expected non-nil session")
 	}
 
-	if s.ID != "abc-123" {
-		t.Errorf("ID = %q, want %q", s.ID, "abc-123")
+	if s.ID != "test-session-id" {
+		t.Errorf("ID = %q, want %q (file-derived ID must be preserved)", s.ID, "test-session-id")
 	}
 	if s.ProjectPath != "/Users/test/project" {
 		t.Errorf("ProjectPath = %q, want %q", s.ProjectPath, "/Users/test/project")
@@ -248,8 +248,8 @@ func TestParseFullSession(t *testing.T) {
 	if s.FirstPrompt != "first prompt" {
 		t.Errorf("FirstPrompt = %q, want %q", s.FirstPrompt, "first prompt")
 	}
-	if s.ID != "full-123" {
-		t.Errorf("ID = %q, want %q", s.ID, "full-123")
+	if s.ID != "test-full-id" {
+		t.Errorf("ID = %q, want %q (file-derived ID must be preserved)", s.ID, "test-full-id")
 	}
 }
 
@@ -296,8 +296,8 @@ func TestExtractUserMetadata(t *testing.T) {
 		if s.GitBranch != "feature-x" {
 			t.Errorf("GitBranch = %q, want %q", s.GitBranch, "feature-x")
 		}
-		if s.ID != "real-session-id-1234" {
-			t.Errorf("ID = %q, want %q", s.ID, "real-session-id-1234")
+		if s.ID != "file-id" {
+			t.Errorf("ID = %q, want %q (sessionId should not override file-derived ID)", s.ID, "file-id")
 		}
 		if s.FirstPrompt != "implement auth" {
 			t.Errorf("FirstPrompt = %q, want %q", s.FirstPrompt, "implement auth")
@@ -338,6 +338,26 @@ func TestExtractUserMetadata(t *testing.T) {
 		}
 		if s.Created.Year() != 2026 || s.Created.Month() != 1 {
 			t.Errorf("Created changed to %v", s.Created)
+		}
+	})
+
+	t.Run("sub-agent sessionId does not override file-derived ID", func(t *testing.T) {
+		// Sub-agent files (agent-*.jsonl) contain a sessionId pointing to their
+		// parent session. The file-derived ID must be preserved to avoid duplicate
+		// ID collisions when multiple sub-agents share the same parent.
+		s := &Session{ID: "agent-19b8cb-fake-uuid", ShortID: "agent-19"}
+		obj := map[string]any{
+			"cwd":       "/Users/test/project",
+			"sessionId": "c8035fd7-parent-session-id",
+			"message":   map[string]any{"role": "user", "content": "sub-agent task"},
+		}
+
+		extractUserMetadata(s, obj)
+		if s.ID != "agent-19b8cb-fake-uuid" {
+			t.Errorf("ID = %q, want %q (sub-agent ID must not be replaced by parent sessionId)", s.ID, "agent-19b8cb-fake-uuid")
+		}
+		if s.ShortID != "agent-19" {
+			t.Errorf("ShortID = %q, want %q", s.ShortID, "agent-19")
 		}
 	})
 
