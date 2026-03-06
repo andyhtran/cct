@@ -10,6 +10,19 @@ import (
 	"github.com/andyhtran/cct/internal/session"
 )
 
+var roleTag = map[string]string{
+	"user":      "[u]",
+	"assistant": "[a]",
+}
+
+func formatMatchRole(m session.Match) string {
+	tag := roleTag[m.Role]
+	if tag == "" {
+		tag = "[?]"
+	}
+	return output.Dim(tag) + " " + m.Snippet
+}
+
 type SearchCmd struct {
 	Query      string `arg:"" help:"Search query"`
 	Project    string `short:"p" help:"Filter by project name"`
@@ -62,13 +75,14 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 	for _, r := range results {
 		s := r.Session
 		for i, m := range r.Matches {
+			display := formatMatchRole(m)
 			if i == 0 {
 				tbl.Row(
-					[]string{s.ShortID, output.Truncate(s.ProjectName, tbl.ColWidth(1)), output.FormatAge(s.Modified), m},
+					[]string{s.ShortID, output.Truncate(s.ProjectName, tbl.ColWidth(1)), output.FormatAge(s.Modified), display},
 					[]func(string) string{output.Dim, output.Bold, output.Dim, nil},
 				)
 			} else {
-				tbl.Continuation(m)
+				tbl.Continuation(display)
 			}
 		}
 	}

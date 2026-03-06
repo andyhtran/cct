@@ -158,7 +158,7 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 
 	scanner := NewJSONLScanner(f)
 
-	var matches []string
+	var matches []Match
 	// For multi-term queries, track which terms have been seen across all messages.
 	termSeen := make([]bool, len(terms))
 
@@ -190,10 +190,13 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 
 		textLower := strings.ToLower(text)
 
+		roleWidth := len(lineType) + 3 // "[x] " prefix
+		sw := snippetWidth - roleWidth
+
 		if isPhrase {
 			if strings.Contains(textLower, keyLower) {
-				snippet := output.ExtractSnippet(text, keyLower, snippetWidth)
-				matches = append(matches, snippet)
+				snippet := output.ExtractSnippet(text, keyLower, sw)
+				matches = append(matches, Match{Role: lineType, Snippet: snippet})
 			}
 			continue
 		}
@@ -209,8 +212,8 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 			}
 		}
 		if bestTerm != "" {
-			snippet := output.ExtractSnippet(text, bestTerm, snippetWidth)
-			matches = append(matches, snippet)
+			snippet := output.ExtractSnippet(text, bestTerm, sw)
+			matches = append(matches, Match{Role: lineType, Snippet: snippet})
 		}
 	}
 	// scanner.Err() intentionally not checked — partial results are acceptable.

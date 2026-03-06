@@ -28,9 +28,14 @@ type Session struct {
 	MessageCount int       `json:"message_count"`
 }
 
+type Match struct {
+	Role    string `json:"role"`
+	Snippet string `json:"snippet"`
+}
+
 type SearchResult struct {
 	Session *Session `json:"session"`
-	Matches []string `json:"matches"`
+	Matches []Match  `json:"matches"`
 }
 
 func ExtractIDFromFilename(path string) string {
