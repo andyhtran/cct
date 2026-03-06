@@ -115,7 +115,6 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 		return nil
 	}
 
-	// Apply limit
 	if !cmd.All && cmd.Limit > 0 && len(matches) > cmd.Limit {
 		total := len(matches)
 		matches = matches[:cmd.Limit]

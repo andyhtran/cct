@@ -60,10 +60,11 @@ func ScanAll(projectFilter string, fullParse bool, includeAgents bool) []*Sessio
 	return ScanFiles(files, fullParse)
 }
 
-func ScanFiles(files []string, fullParse bool) []*Session {
+// parallelMap applies fn to each file path using a worker pool and collects non-nil results.
+func parallelMap[T any](files []string, fn func(string) *T) []*T {
 	numWorkers := runtime.NumCPU()
 	jobs := make(chan string, len(files))
-	results := make(chan *Session, len(files))
+	results := make(chan *T, len(files))
 	var wg sync.WaitGroup
 
 	for i := 0; i < numWorkers; i++ {
@@ -71,50 +72,7 @@ func ScanFiles(files []string, fullParse bool) []*Session {
 		go func() {
 			defer wg.Done()
 			for path := range jobs {
-				var s *Session
-				if fullParse {
-					s = ParseFullSession(path)
-				} else {
-					s = ExtractMetadata(path)
-				}
-				if s != nil {
-					results <- s
-				}
-			}
-		}()
-	}
-
-	for _, f := range files {
-		jobs <- f
-	}
-	close(jobs)
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var sessions []*Session
-	for s := range results {
-		sessions = append(sessions, s)
-	}
-	return sessions
-}
-
-func SearchFiles(files []string, keyword string, snippetWidth int, maxMatches int) []*SearchResult {
-	keyLower := strings.ToLower(keyword)
-	numWorkers := runtime.NumCPU()
-	jobs := make(chan string, len(files))
-	results := make(chan *SearchResult, len(files))
-	var wg sync.WaitGroup
-
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				r := searchOneFile(path, keyLower, snippetWidth, maxMatches)
-				if r != nil {
+				if r := fn(path); r != nil {
 					results <- r
 				}
 			}
@@ -131,11 +89,26 @@ func SearchFiles(files []string, keyword string, snippetWidth int, maxMatches in
 		close(results)
 	}()
 
-	var out []*SearchResult
+	var out []*T
 	for r := range results {
 		out = append(out, r)
 	}
 	return out
+}
+
+func ScanFiles(files []string, fullParse bool) []*Session {
+	parse := ExtractMetadata
+	if fullParse {
+		parse = ParseFullSession
+	}
+	return parallelMap(files, parse)
+}
+
+func SearchFiles(files []string, keyword string, snippetWidth int, maxMatches int) []*SearchResult {
+	keyLower := strings.ToLower(keyword)
+	return parallelMap(files, func(path string) *SearchResult {
+		return searchOneFile(path, keyLower, snippetWidth, maxMatches)
+	})
 }
 
 func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *SearchResult {
@@ -163,8 +136,10 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 	scanner := NewJSONLScanner(f)
 
 	var matches []Match
-	// For multi-term queries, track which terms have been seen across all messages.
-	termSeen := make([]bool, len(terms))
+	var termSeen []bool
+	if !isPhrase {
+		termSeen = make([]bool, len(terms))
+	}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -187,37 +162,47 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 			continue
 		}
 
-		text := ExtractPromptText(obj)
-		if text == "" {
+		blocks := ExtractPromptBlocks(obj)
+		if len(blocks) == 0 {
 			continue
 		}
 
-		textLower := strings.ToLower(text)
-
-		roleWidth := len(lineType) + 3 // "[x] " prefix
-		sw := snippetWidth - roleWidth
-
-		if isPhrase {
-			if strings.Contains(textLower, keyLower) {
-				snippet := output.ExtractSnippet(text, keyLower, sw)
-				matches = append(matches, Match{Role: lineType, Snippet: snippet})
+		for _, block := range blocks {
+			if maxMatches > 0 && len(matches) >= maxMatches {
+				break
 			}
-			continue
-		}
 
-		// Multi-term: check which terms appear in this message.
-		var bestTerm string
-		for i, term := range terms {
-			if strings.Contains(textLower, term) {
-				termSeen[i] = true
-				if bestTerm == "" || len(term) > len(bestTerm) {
-					bestTerm = term
+			text := block.Text
+			textLower := strings.ToLower(text)
+
+			roleWidth := len(lineType) + 3 // "[x] " prefix
+			if block.Source != "" {
+				roleWidth += len(block.Source) + 1 // ":Tool" suffix
+			}
+			sw := snippetWidth - roleWidth
+
+			if isPhrase {
+				if strings.Contains(textLower, keyLower) {
+					snippet := output.ExtractSnippet(text, keyLower, sw)
+					matches = append(matches, Match{Role: lineType, Source: block.Source, Snippet: snippet})
+				}
+				continue
+			}
+
+			// Multi-term: check which terms appear in this block.
+			var bestTerm string
+			for i, term := range terms {
+				if strings.Contains(textLower, term) {
+					termSeen[i] = true
+					if bestTerm == "" || len(term) > len(bestTerm) {
+						bestTerm = term
+					}
 				}
 			}
-		}
-		if bestTerm != "" {
-			snippet := output.ExtractSnippet(text, bestTerm, sw)
-			matches = append(matches, Match{Role: lineType, Snippet: snippet})
+			if bestTerm != "" {
+				snippet := output.ExtractSnippet(text, bestTerm, sw)
+				matches = append(matches, Match{Role: lineType, Source: block.Source, Snippet: snippet})
+			}
 		}
 	}
 	// scanner.Err() intentionally not checked — partial results are acceptable.

@@ -78,7 +78,7 @@ func TestExtractTextFromContent(t *testing.T) {
 		}
 	})
 
-	t.Run("array content skips thinking/tool_use", func(t *testing.T) {
+	t.Run("skips thinking, extracts tool_use name+input only", func(t *testing.T) {
 		content := []any{
 			map[string]any{"type": "thinking", "text": "hmm"},
 			map[string]any{"type": "text", "text": "visible"},

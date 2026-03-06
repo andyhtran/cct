@@ -20,6 +20,9 @@ func formatMatchRole(m session.Match) string {
 	if tag == "" {
 		tag = "[?]"
 	}
+	if m.Source != "" {
+		tag = tag[:len(tag)-1] + ":" + m.Source + "]"
+	}
 	return output.Dim(tag) + " " + m.Snippet
 }
 
@@ -30,6 +33,7 @@ type SearchCmd struct {
 	Limit      int    `short:"n" help:"Max results (0=no limit)" default:"25"`
 	All        bool   `short:"a" help:"Show all results"`
 	MaxMatches int    `short:"m" help:"Max matches per session" default:"3"`
+	Context    int    `short:"C" help:"Extra context characters for snippets" default:"0"`
 	NoAgents   bool   `help:"Exclude sub-agent sessions" name:"no-agents"`
 }
 
@@ -54,7 +58,7 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 			fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(files))
 		}
 	}
-	results := session.SearchFiles(files, cmd.Query, tbl.LastColWidth(), cmd.MaxMatches)
+	results := session.SearchFiles(files, cmd.Query, tbl.LastColWidth()+cmd.Context, cmd.MaxMatches)
 
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Session.Modified.After(results[j].Session.Modified)
@@ -103,17 +107,11 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 	}
 
 	fmt.Println()
-	hints := 0
-	for _, r := range results {
-		if hints >= maxResumeHints {
-			break
-		}
-		if r.Session.IsAgent {
-			continue
-		}
-		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", r.Session.ShortID)))
-		hints++
+	sessions := make([]*session.Session, len(results))
+	for i, r := range results {
+		sessions[i] = r.Session
 	}
+	printResumeHints(sessions)
 	fmt.Println()
 	return nil
 }

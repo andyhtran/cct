@@ -31,6 +31,7 @@ type Session struct {
 
 type Match struct {
 	Role    string `json:"role"`
+	Source  string `json:"source,omitempty"`
 	Snippet string `json:"snippet"`
 }
 
@@ -86,24 +87,8 @@ func FindByPrefixFull(prefix string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	full := ParseFullSession(s.FilePath)
-	if full != nil {
-		s.MessageCount = full.MessageCount
-		if full.FirstPrompt != "" {
-			s.FirstPrompt = full.FirstPrompt
-		}
-		if full.ProjectPath != "" {
-			s.ProjectPath = full.ProjectPath
-			s.ProjectName = full.ProjectName
-		}
-		if full.GitBranch != "" {
-			s.GitBranch = full.GitBranch
-		}
-		if !full.Created.IsZero() {
-			s.Created = full.Created
-		}
+	if full := ParseFullSession(s.FilePath); full != nil {
+		return full, nil
 	}
-
 	return s, nil
 }

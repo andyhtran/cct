@@ -221,11 +221,74 @@ func TestSearchFiles_ToolResult(t *testing.T) {
 		}
 	})
 
-	t.Run("still skips tool_use", func(t *testing.T) {
-		// "Read" only appears inside tool_use which should be skipped
+	t.Run("raw JSON not searchable", func(t *testing.T) {
+		// Raw JSON like "name":"Read" is not in the extracted text (extracted as "Read /path/...")
 		results := SearchFiles(files, "\"name\":\"Read\"", 80, 3)
 		if len(results) != 0 {
-			t.Errorf("expected 0 results for tool_use content, got %d", len(results))
+			t.Errorf("expected 0 results for raw JSON, got %d", len(results))
+		}
+	})
+}
+
+func TestSearchFiles_ToolUse(t *testing.T) {
+	home := setupTestHome(t)
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-proj")
+
+	writeSessionFile(t, projDir, "tool-use-001", []string{
+		`{"type":"user","message":{"role":"user","content":"show me the file"},"cwd":"/test","sessionId":"tool-use-001","timestamp":"2026-01-10T08:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/path/to/config.go"}},{"type":"tool_result","tool_use_id":"tu1","content":"package config"}]},"timestamp":"2026-01-10T08:00:05Z"}`,
+	})
+
+	files := DiscoverFiles("", true)
+
+	t.Run("finds file path in tool_use input", func(t *testing.T) {
+		results := SearchFiles(files, "config.go", 80, 3)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if len(results[0].Matches) == 0 {
+			t.Fatal("expected at least 1 match snippet")
+		}
+		m := results[0].Matches[0]
+		if m.Source != "Read" {
+			t.Errorf("Source = %q, want %q", m.Source, "Read")
+		}
+	})
+
+	t.Run("finds tool name", func(t *testing.T) {
+		results := SearchFiles(files, "Read", 80, 3)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Matches[0].Source != "Read" {
+			t.Errorf("Source = %q, want %q", results[0].Matches[0].Source, "Read")
+		}
+	})
+
+	t.Run("finds bash command", func(t *testing.T) {
+		home2 := setupTestHome(t)
+		projDir2 := filepath.Join(home2, ".claude", "projects", "-Users-test-proj")
+		writeSessionFile(t, projDir2, "tool-use-002", []string{
+			`{"type":"user","message":{"role":"user","content":"compile the project"},"cwd":"/test","sessionId":"tool-use-002","timestamp":"2026-01-10T08:00:00Z"}`,
+			`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Bash","input":{"command":"go build ./..."}}]},"timestamp":"2026-01-10T08:00:05Z"}`,
+		})
+		files2 := DiscoverFiles("", true)
+		results := SearchFiles(files2, "go build", 80, 3)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Matches[0].Source != "Bash" {
+			t.Errorf("Source = %q, want %q", results[0].Matches[0].Source, "Bash")
+		}
+	})
+
+	t.Run("text match has empty source", func(t *testing.T) {
+		results := SearchFiles(files, "show me the file", 80, 3)
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Matches[0].Source != "" {
+			t.Errorf("Source = %q, want empty for text match", results[0].Matches[0].Source)
 		}
 	})
 }

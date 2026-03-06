@@ -54,6 +54,20 @@ func listSessions(globals *Globals, project string, limit int, showAll, compact 
 
 const maxResumeHints = 3
 
+func printResumeHints(sessions []*session.Session) {
+	hints := 0
+	for _, s := range sessions {
+		if hints >= maxResumeHints {
+			break
+		}
+		if s.IsAgent {
+			continue
+		}
+		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", s.ShortID)))
+		hints++
+	}
+}
+
 func printSessionTable(sessions []*session.Session, compact bool) {
 	tbl := output.NewTable("",
 		output.Fixed("SESSION", 16),
@@ -85,17 +99,7 @@ func printSessionTable(sessions []*session.Session, compact bool) {
 
 	if !compact {
 		fmt.Println()
-		hints := 0
-		for _, s := range sessions {
-			if hints >= maxResumeHints {
-				break
-			}
-			if s.IsAgent {
-				continue
-			}
-			fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", s.ShortID)))
-			hints++
-		}
+		printResumeHints(sessions)
 	}
 	fmt.Println()
 }
