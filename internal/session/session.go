@@ -18,6 +18,7 @@ var (
 type Session struct {
 	ID           string    `json:"id"`
 	ShortID      string    `json:"short_id"`
+	IsAgent      bool      `json:"is_agent"`
 	ProjectPath  string    `json:"project_path"`
 	ProjectName  string    `json:"project_name"`
 	GitBranch    string    `json:"git_branch"`
@@ -28,9 +29,15 @@ type Session struct {
 	MessageCount int       `json:"message_count"`
 }
 
+type Match struct {
+	Role    string `json:"role"`
+	Source  string `json:"source,omitempty"`
+	Snippet string `json:"snippet"`
+}
+
 type SearchResult struct {
 	Session *Session `json:"session"`
-	Matches []string `json:"matches"`
+	Matches []Match  `json:"matches"`
 }
 
 func ExtractIDFromFilename(path string) string {
@@ -38,7 +45,14 @@ func ExtractIDFromFilename(path string) string {
 	return strings.TrimSuffix(base, ".jsonl")
 }
 
+func IsAgentSession(id string) bool {
+	return strings.HasPrefix(id, "agent-")
+}
+
 func ShortID(id string) string {
+	if IsAgentSession(id) {
+		return id
+	}
 	if len(id) >= 8 {
 		return id[:8]
 	}
@@ -46,7 +60,7 @@ func ShortID(id string) string {
 }
 
 func FindByPrefix(prefix string) (*Session, error) {
-	sessions := ScanAll("", false)
+	sessions := ScanAll("", false, true)
 	var matches []*Session
 	for _, s := range sessions {
 		if s.ID == prefix || strings.HasPrefix(s.ID, prefix) || s.ShortID == prefix {
@@ -73,24 +87,8 @@ func FindByPrefixFull(prefix string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	full := ParseFullSession(s.FilePath)
-	if full != nil {
-		s.MessageCount = full.MessageCount
-		if full.FirstPrompt != "" {
-			s.FirstPrompt = full.FirstPrompt
-		}
-		if full.ProjectPath != "" {
-			s.ProjectPath = full.ProjectPath
-			s.ProjectName = full.ProjectName
-		}
-		if full.GitBranch != "" {
-			s.GitBranch = full.GitBranch
-		}
-		if !full.Created.IsZero() {
-			s.Created = full.Created
-		}
+	if full := ParseFullSession(s.FilePath); full != nil {
+		return full, nil
 	}
-
 	return s, nil
 }

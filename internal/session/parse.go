@@ -34,15 +34,12 @@ func NewJSONLScanner(r io.Reader) *bufio.Scanner {
 }
 
 func FastExtractType(line []byte) string {
-	// Check for top-level message types first - these values are unique to the
-	// top level and avoid confusion with nested types like "type":"message".
 	if bytes.Contains(line, typeUser) {
 		return "user"
 	}
 	if bytes.Contains(line, typeAssistant) {
 		return "assistant"
 	}
-	// Fall back to generic extraction for other types
 	idx := bytes.Index(line, typePrefix)
 	if idx < 0 {
 		return ""
@@ -77,22 +74,93 @@ func ExtractPromptText(obj map[string]any) string {
 	return ExtractTextFromContent(msg["content"])
 }
 
+func ExtractPromptBlocks(obj map[string]any) []ContentBlock {
+	msg, ok := obj["message"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return ExtractContentBlocks(msg["content"])
+}
+
 // skipTypes lists content block types that never contain searchable text.
 var skipTypes = map[string]bool{
 	"thinking":          true,
 	"redacted_thinking": true,
 	"image":             true,
 	"document":          true,
-	"tool_use":          true,
 }
 
 const maxExtractDepth = 10
+
+// ContentBlock holds extracted text from a single content block along with its source.
+// Source is empty for regular text blocks, or the tool name for tool_use blocks.
+type ContentBlock struct {
+	Text   string
+	Source string
+}
 
 // ExtractTextFromContent recursively extracts searchable text from message content.
 // Content can be a plain string, an array of content blocks, or a single block object.
 // Blocks may nest content via a "content" field (e.g. tool_result blocks).
 func ExtractTextFromContent(content any) string {
 	return extractText(content, 0)
+}
+
+// ExtractContentBlocks returns individual searchable blocks from message content,
+// preserving the source (tool name for tool_use blocks, empty for text).
+func ExtractContentBlocks(content any) []ContentBlock {
+	return extractBlocks(content, 0)
+}
+
+func extractBlocks(content any, depth int) []ContentBlock {
+	if depth > maxExtractDepth || content == nil {
+		return nil
+	}
+	if str, ok := content.(string); ok {
+		if isBase64Like(str) {
+			return nil
+		}
+		return []ContentBlock{{Text: str}}
+	}
+	if obj, ok := content.(map[string]any); ok {
+		return extractBlockEntries(obj, depth)
+	}
+	arr, ok := content.([]any)
+	if !ok {
+		return nil
+	}
+	var blocks []ContentBlock
+	for _, item := range arr {
+		block, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks = append(blocks, extractBlockEntries(block, depth)...)
+	}
+	return blocks
+}
+
+func extractBlockEntries(block map[string]any, depth int) []ContentBlock {
+	blockType, _ := block["type"].(string)
+	if skipTypes[blockType] {
+		return nil
+	}
+	if blockType == "tool_use" {
+		text := extractToolUseText(block)
+		if text == "" {
+			return nil
+		}
+		name, _ := block["name"].(string)
+		return []ContentBlock{{Text: text, Source: name}}
+	}
+	var blocks []ContentBlock
+	if text, ok := block["text"].(string); ok && text != "" && !isBase64Like(text) {
+		blocks = append(blocks, ContentBlock{Text: text})
+	}
+	if c, exists := block["content"]; exists {
+		blocks = append(blocks, extractBlocks(c, depth+1)...)
+	}
+	return blocks
 }
 
 func extractText(content any, depth int) string {
@@ -130,6 +198,9 @@ func extractBlockText(block map[string]any, depth int) string {
 	if skipTypes[blockType] {
 		return ""
 	}
+	if blockType == "tool_use" {
+		return extractToolUseText(block)
+	}
 	var parts []string
 	if text, ok := block["text"].(string); ok && text != "" && !isBase64Like(text) {
 		parts = append(parts, text)
@@ -137,6 +208,21 @@ func extractBlockText(block map[string]any, depth int) string {
 	if c, exists := block["content"]; exists {
 		if s := extractText(c, depth+1); s != "" {
 			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func extractToolUseText(block map[string]any) string {
+	var parts []string
+	if name, ok := block["name"].(string); ok {
+		parts = append(parts, name)
+	}
+	if input, ok := block["input"].(map[string]any); ok {
+		for _, v := range input {
+			if s, ok := v.(string); ok && s != "" && !isBase64Like(s) {
+				parts = append(parts, s)
+			}
 		}
 	}
 	return strings.Join(parts, " ")
@@ -162,10 +248,6 @@ func extractUserMetadata(s *Session, obj map[string]any) bool {
 		s.ProjectPath, _ = obj["cwd"].(string)
 		s.ProjectName = filepath.Base(s.ProjectPath)
 		s.GitBranch, _ = obj["gitBranch"].(string)
-		if sid, ok := obj["sessionId"].(string); ok && sid != "" {
-			s.ID = sid
-			s.ShortID = ShortID(sid)
-		}
 	}
 	if s.FirstPrompt == "" {
 		s.FirstPrompt = ExtractPromptText(obj)
@@ -200,6 +282,7 @@ func parseSession(path string, full bool) *Session {
 		Modified: info.ModTime(),
 	}
 	s.ShortID = ShortID(s.ID)
+	s.IsAgent = IsAgentSession(s.ID)
 
 	scanner := NewJSONLScanner(f)
 

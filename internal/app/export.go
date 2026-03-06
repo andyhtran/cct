@@ -242,18 +242,17 @@ func (cmd *ExportCmd) exportJSON(s *session.Session, roles map[string]bool, maxC
 		Messages: jsonMessages,
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-
+	var w io.Writer = os.Stdout
 	if cmd.Output != "" {
 		outFile, err := os.Create(cmd.Output)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = outFile.Close() }()
-		enc = json.NewEncoder(outFile)
-		enc.SetIndent("", "  ")
+		w = outFile
 	}
 
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }

@@ -127,6 +127,78 @@ func TestFindByPrefixFull(t *testing.T) {
 	}
 }
 
+func TestIsAgentSession(t *testing.T) {
+	tests := []struct {
+		id   string
+		want bool
+	}{
+		{"agent-12345678", true},
+		{"agent-abcdef12", true},
+		{"agent-", true},
+		{"aaaa1111-2222-3333-4444-555555555555", false},
+		{"", false},
+		{"agents-not-an-agent", false},
+	}
+	for _, tt := range tests {
+		if got := IsAgentSession(tt.id); got != tt.want {
+			t.Errorf("IsAgentSession(%q) = %v, want %v", tt.id, got, tt.want)
+		}
+	}
+}
+
+func TestShortID_Agent(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"agent-12345678", "agent-12345678"},
+		{"agent-ab", "agent-ab"},
+		{"aaaa1111-2222-3333-4444-555555555555", "aaaa1111"},
+		{"short", "short"},
+	}
+	for _, tt := range tests {
+		if got := ShortID(tt.id); got != tt.want {
+			t.Errorf("ShortID(%q) = %q, want %q", tt.id, got, tt.want)
+		}
+	}
+}
+
+func TestFindByPrefix_Agent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-proj")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range []struct{ id, content string }{
+		{"sess-1111-2222-3333-4444-555555555555", `{"type":"user","message":{"role":"user","content":"regular"},"cwd":"/test"}`},
+		{"agent-abcdef12", `{"type":"user","message":{"role":"user","content":"agent task"},"cwd":"/test"}`},
+	} {
+		path := filepath.Join(projDir, s.id+".jsonl")
+		if err := os.WriteFile(path, []byte(s.content+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s, err := FindByPrefix("agent-abcdef12")
+	if err != nil {
+		t.Fatalf("FindByPrefix agent: %v", err)
+	}
+	if !s.IsAgent {
+		t.Error("expected IsAgent=true for agent session")
+	}
+
+	s, err = FindByPrefix("sess-1111")
+	if err != nil {
+		t.Fatalf("FindByPrefix regular: %v", err)
+	}
+	if s.IsAgent {
+		t.Error("expected IsAgent=false for regular session")
+	}
+}
+
 func TestExtractIDFromFilename(t *testing.T) {
 	tests := []struct {
 		path string

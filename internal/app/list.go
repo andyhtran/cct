@@ -13,21 +13,22 @@ import (
 type DefaultCmd struct{}
 
 func (cmd *DefaultCmd) Run(globals *Globals) error {
-	return listSessions(globals, "", 5, false, true)
+	return listSessions(globals, "", 5, false, true, false)
 }
 
 type ListCmd struct {
 	Project string `short:"p" help:"Filter by project name"`
 	Limit   int    `short:"n" help:"Max results" default:"15"`
 	All     bool   `short:"a" help:"Show all results"`
+	Agents  bool   `help:"Include sub-agent sessions"`
 }
 
 func (cmd *ListCmd) Run(globals *Globals) error {
-	return listSessions(globals, cmd.Project, cmd.Limit, cmd.All, false)
+	return listSessions(globals, cmd.Project, cmd.Limit, cmd.All, false, cmd.Agents)
 }
 
-func listSessions(globals *Globals, project string, limit int, showAll, compact bool) error {
-	sessions := session.ScanAll(project, false)
+func listSessions(globals *Globals, project string, limit int, showAll, compact bool, includeAgents bool) error {
+	sessions := session.ScanAll(project, false, includeAgents)
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
@@ -53,9 +54,23 @@ func listSessions(globals *Globals, project string, limit int, showAll, compact 
 
 const maxResumeHints = 3
 
+func printResumeHints(sessions []*session.Session) {
+	hints := 0
+	for _, s := range sessions {
+		if hints >= maxResumeHints {
+			break
+		}
+		if s.IsAgent {
+			continue
+		}
+		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", s.ShortID)))
+		hints++
+	}
+}
+
 func printSessionTable(sessions []*session.Session, compact bool) {
 	tbl := output.NewTable("",
-		output.Fixed("SESSION", 10),
+		output.Fixed("SESSION", 16),
 		output.Flex("PROJECT", 30, 15),
 		output.Fixed("BRANCH", 8),
 		output.Fixed("AGE", 6),
@@ -84,13 +99,7 @@ func printSessionTable(sessions []*session.Session, compact bool) {
 
 	if !compact {
 		fmt.Println()
-		n := len(sessions)
-		if n > maxResumeHints {
-			n = maxResumeHints
-		}
-		for _, s := range sessions[:n] {
-			fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", s.ShortID)))
-		}
+		printResumeHints(sessions)
 	}
 	fmt.Println()
 }
