@@ -153,9 +153,14 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 	}
 	s.ShortID = ShortID(s.ID)
 
+	terms := strings.Fields(keyLower)
+	isPhrase := len(terms) <= 1
+
 	scanner := NewJSONLScanner(f)
 
 	var matches []string
+	// For multi-term queries, track which terms have been seen across all messages.
+	termSeen := make([]bool, len(terms))
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -183,14 +188,49 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 			continue
 		}
 
-		if strings.Contains(strings.ToLower(text), keyLower) {
-			snippet := output.ExtractSnippet(text, keyLower, snippetWidth)
+		textLower := strings.ToLower(text)
+
+		if isPhrase {
+			if strings.Contains(textLower, keyLower) {
+				snippet := output.ExtractSnippet(text, keyLower, snippetWidth)
+				matches = append(matches, snippet)
+			}
+			continue
+		}
+
+		// Multi-term: check which terms appear in this message.
+		var bestTerm string
+		for i, term := range terms {
+			if strings.Contains(textLower, term) {
+				termSeen[i] = true
+				if bestTerm == "" || len(term) > len(bestTerm) {
+					bestTerm = term
+				}
+			}
+		}
+		if bestTerm != "" {
+			snippet := output.ExtractSnippet(text, bestTerm, snippetWidth)
 			matches = append(matches, snippet)
 		}
 	}
 	// scanner.Err() intentionally not checked — partial results are acceptable.
 
-	if len(matches) == 0 {
+	if isPhrase {
+		if len(matches) == 0 {
+			return nil
+		}
+		return &SearchResult{Session: s, Matches: matches}
+	}
+
+	// Multi-term: only return results where ALL terms appeared somewhere in the session.
+	allSeen := true
+	for _, seen := range termSeen {
+		if !seen {
+			allSeen = false
+			break
+		}
+	}
+	if !allSeen || len(matches) == 0 {
 		return nil
 	}
 
