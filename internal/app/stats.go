@@ -11,7 +11,9 @@ import (
 	"github.com/andyhtran/cct/internal/session"
 )
 
-type StatsCmd struct{}
+type StatsCmd struct {
+	Agents bool `help:"Include sub-agent sessions"`
+}
 
 type statsData struct {
 	Total          int           `json:"total_sessions"`
@@ -29,7 +31,7 @@ type projectStat struct {
 }
 
 func (cmd *StatsCmd) Run(globals *Globals) error {
-	files := session.DiscoverFiles("")
+	files := session.DiscoverFiles("", cmd.Agents)
 	if !globals.JSON && len(files) > 50 {
 		fmt.Fprintf(os.Stderr, "Scanning %d sessions...\n", len(files))
 	}

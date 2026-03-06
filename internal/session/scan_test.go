@@ -50,40 +50,64 @@ func TestDiscoverFiles(t *testing.T) {
 	})
 
 	t.Run("no filter", func(t *testing.T) {
-		files := DiscoverFiles("")
+		files := DiscoverFiles("", true)
 		if len(files) != 3 {
 			t.Errorf("expected 3 files, got %d", len(files))
 		}
 	})
 
 	t.Run("project filter", func(t *testing.T) {
-		files := DiscoverFiles("myproject")
+		files := DiscoverFiles("myproject", true)
 		if len(files) != 2 {
 			t.Errorf("expected 2 files for myproject filter, got %d", len(files))
 		}
 	})
 
 	t.Run("filter no match", func(t *testing.T) {
-		files := DiscoverFiles("nonexistent")
+		files := DiscoverFiles("nonexistent", true)
 		if len(files) != 0 {
 			t.Errorf("expected 0 files for nonexistent filter, got %d", len(files))
 		}
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		files := DiscoverFiles("MyProject")
+		files := DiscoverFiles("MyProject", true)
 		if len(files) != 2 {
 			t.Errorf("expected 2 files for case-insensitive filter, got %d", len(files))
 		}
 	})
 }
 
+func TestDiscoverFiles_AgentFiltering(t *testing.T) {
+	home := setupTestHome(t)
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	writeSessionFile(t, projDir, "sess-aaa", []string{
+		`{"type":"user","message":{"role":"user","content":"hello"},"cwd":"/test"}`,
+	})
+	writeSessionFile(t, projDir, "agent-12345678", []string{
+		`{"type":"user","message":{"role":"user","content":"agent task"},"cwd":"/test"}`,
+	})
+
+	t.Run("excludes agents", func(t *testing.T) {
+		files := DiscoverFiles("", false)
+		if len(files) != 1 {
+			t.Errorf("expected 1 file (no agents), got %d", len(files))
+		}
+	})
+
+	t.Run("includes agents", func(t *testing.T) {
+		files := DiscoverFiles("", true)
+		if len(files) != 2 {
+			t.Errorf("expected 2 files (with agents), got %d", len(files))
+		}
+	})
+}
+
 func TestDiscoverFiles_MissingDir(t *testing.T) {
 	home := setupTestHome(t)
-	// Don't create the projects directory.
 	_ = home
 
-	files := DiscoverFiles("")
+	files := DiscoverFiles("", true)
 	if files != nil {
 		t.Errorf("expected nil for missing dir, got %v", files)
 	}
@@ -98,7 +122,7 @@ func TestScanAll(t *testing.T) {
 	})
 
 	t.Run("quick scan", func(t *testing.T) {
-		sessions := ScanAll("", false)
+		sessions := ScanAll("", false, true)
 		if len(sessions) != 1 {
 			t.Fatalf("expected 1 session, got %d", len(sessions))
 		}
@@ -115,7 +139,7 @@ func TestScanAll(t *testing.T) {
 	})
 
 	t.Run("full parse", func(t *testing.T) {
-		sessions := ScanAll("", true)
+		sessions := ScanAll("", true, true)
 		if len(sessions) != 1 {
 			t.Fatalf("expected 1 session, got %d", len(sessions))
 		}
@@ -126,11 +150,11 @@ func TestScanAll(t *testing.T) {
 	})
 
 	t.Run("with project filter", func(t *testing.T) {
-		sessions := ScanAll("proj", false)
+		sessions := ScanAll("proj", false, true)
 		if len(sessions) != 1 {
 			t.Fatalf("expected 1 session, got %d", len(sessions))
 		}
-		sessions = ScanAll("nonexistent", false)
+		sessions = ScanAll("nonexistent", false, true)
 		if len(sessions) != 0 {
 			t.Errorf("expected 0 sessions for nonexistent filter, got %d", len(sessions))
 		}
@@ -149,7 +173,7 @@ func TestSearchFiles(t *testing.T) {
 		`{"type":"user","message":{"role":"user","content":"add authentication"},"cwd":"/test","sessionId":"srch-002","timestamp":"2026-01-11T08:00:00Z"}`,
 	})
 
-	files := DiscoverFiles("")
+	files := DiscoverFiles("", true)
 
 	t.Run("keyword found", func(t *testing.T) {
 		results := SearchFiles(files, "database", 80, 3)
@@ -185,7 +209,7 @@ func TestSearchFiles_ToolResult(t *testing.T) {
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{}},{"type":"tool_result","tool_use_id":"tu1","content":"database_url=postgres://localhost"}]},"timestamp":"2026-01-10T08:00:05Z"}`,
 	})
 
-	files := DiscoverFiles("")
+	files := DiscoverFiles("", true)
 
 	t.Run("finds text in tool_result content", func(t *testing.T) {
 		results := SearchFiles(files, "postgres", 80, 3)
@@ -219,7 +243,7 @@ func TestSearchFiles_MaxMatches(t *testing.T) {
 	}
 	writeSessionFile(t, projDir, "srch-max", lines)
 
-	files := DiscoverFiles("")
+	files := DiscoverFiles("", true)
 	results := SearchFiles(files, "keyword", 80, 3)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))

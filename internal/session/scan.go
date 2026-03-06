@@ -15,7 +15,7 @@ import (
 
 // DiscoverFiles reads exactly one directory level deep under ~/.claude/projects/,
 // matching Claude Code's current storage layout: <projects>/<dir>/<file>.jsonl.
-func DiscoverFiles(projectFilter string) []string {
+func DiscoverFiles(projectFilter string, includeAgents bool) []string {
 	dir := paths.ProjectsDir()
 	var files []string
 	entries, err := os.ReadDir(dir)
@@ -45,6 +45,9 @@ func DiscoverFiles(projectFilter string) []string {
 		}
 		for _, f := range dirEntries {
 			if !f.IsDir() && strings.HasSuffix(f.Name(), ".jsonl") && f.Name() != "sessions-index.json" {
+				if !includeAgents && strings.HasPrefix(f.Name(), "agent-") {
+					continue
+				}
 				files = append(files, filepath.Join(dirPath, f.Name()))
 			}
 		}
@@ -52,8 +55,8 @@ func DiscoverFiles(projectFilter string) []string {
 	return files
 }
 
-func ScanAll(projectFilter string, fullParse bool) []*Session {
-	files := DiscoverFiles(projectFilter)
+func ScanAll(projectFilter string, fullParse bool, includeAgents bool) []*Session {
+	files := DiscoverFiles(projectFilter, includeAgents)
 	return ScanFiles(files, fullParse)
 }
 
@@ -152,6 +155,7 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 		Modified: info.ModTime(),
 	}
 	s.ShortID = ShortID(s.ID)
+	s.IsAgent = IsAgentSession(s.ID)
 
 	terms := strings.Fields(keyLower)
 	isPhrase := len(terms) <= 1

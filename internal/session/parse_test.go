@@ -166,7 +166,6 @@ func TestExtractTextFromContent(t *testing.T) {
 }
 
 func TestExtractMetadata(t *testing.T) {
-	// Create a temp JSONL file
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test-session-id.jsonl")
 

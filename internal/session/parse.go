@@ -34,15 +34,12 @@ func NewJSONLScanner(r io.Reader) *bufio.Scanner {
 }
 
 func FastExtractType(line []byte) string {
-	// Check for top-level message types first - these values are unique to the
-	// top level and avoid confusion with nested types like "type":"message".
 	if bytes.Contains(line, typeUser) {
 		return "user"
 	}
 	if bytes.Contains(line, typeAssistant) {
 		return "assistant"
 	}
-	// Fall back to generic extraction for other types
 	idx := bytes.Index(line, typePrefix)
 	if idx < 0 {
 		return ""
@@ -196,6 +193,7 @@ func parseSession(path string, full bool) *Session {
 		Modified: info.ModTime(),
 	}
 	s.ShortID = ShortID(s.ID)
+	s.IsAgent = IsAgentSession(s.ID)
 
 	scanner := NewJSONLScanner(f)
 

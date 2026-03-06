@@ -30,11 +30,12 @@ type SearchCmd struct {
 	Limit      int    `short:"n" help:"Max results (0=no limit)" default:"25"`
 	All        bool   `short:"a" help:"Show all results"`
 	MaxMatches int    `short:"m" help:"Max matches per session" default:"3"`
+	NoAgents   bool   `help:"Exclude sub-agent sessions" name:"no-agents"`
 }
 
 func (cmd *SearchCmd) Run(globals *Globals) error {
 	tbl := output.NewTable(cmd.Query,
-		output.Fixed("SESSION", 10),
+		output.Fixed("SESSION", 16),
 		output.Flex("PROJECT", 25, 15),
 		output.Fixed("AGE", 6),
 		output.Flex("MATCH", 0, 30),
@@ -48,7 +49,7 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 		}
 		files = []string{s.FilePath}
 	} else {
-		files = session.DiscoverFiles(cmd.Project)
+		files = session.DiscoverFiles(cmd.Project, !cmd.NoAgents)
 		if !globals.JSON && len(files) > 50 {
 			fmt.Fprintf(os.Stderr, "Searching %d sessions...\n", len(files))
 		}
@@ -84,11 +85,15 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 
 	for _, r := range results {
 		s := r.Session
+		projectName := s.ProjectName
+		if s.IsAgent {
+			projectName += " (agent)"
+		}
 		for i, m := range r.Matches {
 			display := formatMatchRole(m)
 			if i == 0 {
 				tbl.Row(
-					[]string{s.ShortID, output.Truncate(s.ProjectName, tbl.ColWidth(1)), output.FormatAge(s.Modified), display},
+					[]string{s.ShortID, output.Truncate(projectName, tbl.ColWidth(1)), output.FormatAge(s.Modified), display},
 					[]func(string) string{output.Dim, output.Bold, output.Dim, nil},
 				)
 			} else {
@@ -98,12 +103,16 @@ func (cmd *SearchCmd) Run(globals *Globals) error {
 	}
 
 	fmt.Println()
-	n := len(results)
-	if n > maxResumeHints {
-		n = maxResumeHints
-	}
-	for _, r := range results[:n] {
+	hints := 0
+	for _, r := range results {
+		if hints >= maxResumeHints {
+			break
+		}
+		if r.Session.IsAgent {
+			continue
+		}
 		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct resume %s", r.Session.ShortID)))
+		hints++
 	}
 	fmt.Println()
 	return nil

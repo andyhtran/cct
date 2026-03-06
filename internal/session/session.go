@@ -18,6 +18,7 @@ var (
 type Session struct {
 	ID           string    `json:"id"`
 	ShortID      string    `json:"short_id"`
+	IsAgent      bool      `json:"is_agent"`
 	ProjectPath  string    `json:"project_path"`
 	ProjectName  string    `json:"project_name"`
 	GitBranch    string    `json:"git_branch"`
@@ -43,7 +44,14 @@ func ExtractIDFromFilename(path string) string {
 	return strings.TrimSuffix(base, ".jsonl")
 }
 
+func IsAgentSession(id string) bool {
+	return strings.HasPrefix(id, "agent-")
+}
+
 func ShortID(id string) string {
+	if IsAgentSession(id) {
+		return id
+	}
 	if len(id) >= 8 {
 		return id[:8]
 	}
@@ -51,7 +59,7 @@ func ShortID(id string) string {
 }
 
 func FindByPrefix(prefix string) (*Session, error) {
-	sessions := ScanAll("", false)
+	sessions := ScanAll("", false, true)
 	var matches []*Session
 	for _, s := range sessions {
 		if s.ID == prefix || strings.HasPrefix(s.ID, prefix) || s.ShortID == prefix {
