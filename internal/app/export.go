@@ -14,11 +14,13 @@ import (
 
 type ExportCmd struct {
 	ID                 string `arg:"" help:"Session ID or prefix"`
-	Full               bool   `help:"Include full message text (no truncation)"`
+	Full               bool   `help:"Show everything (no truncation, include tool results)"`
+	Short              bool   `help:"Compact output (truncate messages to 500 chars)"`
 	Output             string `short:"o" help:"Output file (default: stdout)"`
 	Role               string `short:"r" help:"Filter by role (comma-separated: user,assistant)" default:"user,assistant"`
 	Limit              int    `short:"n" help:"Last N messages (0=all)" default:"0"`
-	MaxChars           int    `help:"Truncate message text to N chars (0=no limit)" default:"500" name:"max-chars"`
+	MaxChars           int    `help:"Truncate conversation text to N chars (0=no limit)" default:"0" name:"max-chars"`
+	MaxToolChars       int    `help:"Truncate tool result text to N chars (0=no limit)" default:"2000" name:"max-tool-chars"`
 	IncludeToolResults bool   `help:"Include tool result content" name:"include-tool-results"`
 	Search             string `short:"s" help:"Filter messages containing this text (case-insensitive)"`
 }
@@ -30,26 +32,57 @@ func (cmd *ExportCmd) Run(globals *Globals) error {
 	}
 
 	maxChars := cmd.MaxChars
+	maxToolChars := cmd.MaxToolChars
+	includeToolResults := cmd.IncludeToolResults
 	if cmd.Full {
 		maxChars = 0
+		maxToolChars = 0
+		includeToolResults = true
+	}
+	if cmd.Short {
+		maxChars = 500
 	}
 
 	roles := parseRoles(cmd.Role)
 
 	if globals.JSON {
-		return cmd.exportJSON(match, roles, maxChars, cmd.Search)
+		return cmd.exportJSON(match, roles, maxChars, maxToolChars, includeToolResults, cmd.Search)
 	}
 
-	md, err := renderMarkdown(match, roles, maxChars, cmd.Limit, cmd.IncludeToolResults, cmd.Search)
+	md, stats, err := renderMarkdown(match, roles, maxChars, maxToolChars, cmd.Limit, includeToolResults, cmd.Search)
 	if err != nil {
 		return err
 	}
 
 	if cmd.Output != "" {
-		return os.WriteFile(cmd.Output, []byte(md), 0o600)
+		err = os.WriteFile(cmd.Output, []byte(md), 0o600)
+		if err != nil {
+			return err
+		}
+		printHints(stats)
+		return nil
 	}
+
 	fmt.Print(md)
+	printHints(stats)
 	return nil
+}
+
+type exportStats struct {
+	toolBlocksSkipped int
+	messagesTruncated int
+}
+
+func printHints(stats exportStats) {
+	if os.Getenv("CCT_NO_HINTS") != "" {
+		return
+	}
+	if stats.toolBlocksSkipped > 0 {
+		fmt.Fprintf(os.Stderr, "hint: %d tool block(s) skipped (use --include-tool-results or --full to include)\n", stats.toolBlocksSkipped)
+	}
+	if stats.messagesTruncated > 0 {
+		fmt.Fprintf(os.Stderr, "hint: %d message(s) truncated (use --full for complete output)\n", stats.messagesTruncated)
+	}
 }
 
 func parseRoles(roleStr string) map[string]bool {
@@ -63,10 +96,10 @@ func parseRoles(roleStr string) map[string]bool {
 	return roles
 }
 
-func renderMarkdown(s *session.Session, roles map[string]bool, maxChars, limit int, includeToolResults bool, searchFilter string) (string, error) {
+func renderMarkdown(s *session.Session, roles map[string]bool, maxChars, maxToolChars, limit int, includeToolResults bool, searchFilter string) (string, exportStats, error) {
 	f, err := os.Open(s.FilePath)
 	if err != nil {
-		return "", fmt.Errorf("cannot open session file: %w", err)
+		return "", exportStats{}, fmt.Errorf("cannot open session file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -85,7 +118,7 @@ func renderMarkdown(s *session.Session, roles map[string]bool, maxChars, limit i
 	fmt.Fprintf(&b, "- **Messages**: %d\n", s.MessageCount)
 	b.WriteString("\n---\n\n")
 
-	messages := collectMessages(f, roles, includeToolResults, searchFilter)
+	messages, stats := collectMessages(f, roles, includeToolResults, searchFilter, maxToolChars)
 
 	if limit > 0 && len(messages) > limit {
 		messages = messages[len(messages)-limit:]
@@ -94,7 +127,8 @@ func renderMarkdown(s *session.Session, roles map[string]bool, maxChars, limit i
 	for _, msg := range messages {
 		text := msg.text
 		if maxChars > 0 && len(text) > maxChars {
-			text = output.Truncate(text, maxChars)
+			text = output.TruncateWithCount(text, maxChars)
+			stats.messagesTruncated++
 		}
 
 		if msg.role == "user" {
@@ -106,7 +140,7 @@ func renderMarkdown(s *session.Session, roles map[string]bool, maxChars, limit i
 		b.WriteString("\n\n---\n\n")
 	}
 
-	return b.String(), nil
+	return b.String(), stats, nil
 }
 
 type exportMessage struct {
@@ -115,9 +149,10 @@ type exportMessage struct {
 	timestamp time.Time
 }
 
-func collectMessages(r io.Reader, roles map[string]bool, includeToolResults bool, searchFilter string) []exportMessage {
+func collectMessages(r io.Reader, roles map[string]bool, includeToolResults bool, searchFilter string, maxToolChars int) ([]exportMessage, exportStats) {
 	scanner := session.NewJSONLScanner(r)
 	var messages []exportMessage
+	var stats exportStats
 	searchLower := strings.ToLower(searchFilter)
 
 	for scanner.Scan() {
@@ -136,12 +171,9 @@ func collectMessages(r io.Reader, roles map[string]bool, includeToolResults bool
 			continue
 		}
 
-		var text string
-		if includeToolResults {
-			text = session.ExtractPromptText(obj)
-		} else {
-			text = extractTextNoToolResults(obj)
-		}
+		text, skipped := extractContent(obj, includeToolResults, maxToolChars)
+		stats.toolBlocksSkipped += skipped
+
 		if text == "" {
 			continue
 		}
@@ -159,42 +191,62 @@ func collectMessages(r io.Reader, roles map[string]bool, includeToolResults bool
 		})
 	}
 
-	return messages
+	return messages, stats
 }
 
-// extractTextNoToolResults extracts message text but skips tool_result blocks.
-func extractTextNoToolResults(obj map[string]any) string {
+func extractContent(obj map[string]any, includeToolResults bool, maxToolChars int) (string, int) {
 	msg, ok := obj["message"].(map[string]any)
 	if !ok {
-		return ""
+		return "", 0
 	}
 	content := msg["content"]
 	if content == nil {
-		return ""
+		return "", 0
 	}
 	if str, ok := content.(string); ok {
-		return str
+		return str, 0
 	}
 	arr, ok := content.([]any)
 	if !ok {
-		return ""
+		return "", 0
 	}
 	var parts []string
+	skipped := 0
 	for _, item := range arr {
 		block, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
 		blockType, _ := block["type"].(string)
-		// Skip tool_result AND the types already skipped by ExtractTextFromContent
-		if blockType == "tool_result" || blockType == "tool_use" || blockType == "thinking" || blockType == "redacted_thinking" || blockType == "image" || blockType == "document" {
+		if session.SkipTypes[blockType] {
 			continue
 		}
-		if text, ok := block["text"].(string); ok && text != "" {
-			parts = append(parts, text)
+
+		isToolBlock := blockType == "tool_result" || blockType == "tool_use"
+
+		if isToolBlock && !includeToolResults {
+			skipped++
+			continue
 		}
+
+		var text string
+		if isToolBlock {
+			text = session.ExtractTextFromContent(item)
+		} else if t, ok := block["text"].(string); ok {
+			text = t
+		}
+
+		if text == "" {
+			continue
+		}
+
+		if isToolBlock && maxToolChars > 0 && len(text) > maxToolChars {
+			text = output.TruncateWithCount(text, maxToolChars)
+		}
+
+		parts = append(parts, text)
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " "), skipped
 }
 
 type exportJSONOutput struct {
@@ -208,14 +260,14 @@ type exportJSONMessage struct {
 	Text      string `json:"text"`
 }
 
-func (cmd *ExportCmd) exportJSON(s *session.Session, roles map[string]bool, maxChars int, searchFilter string) error {
+func (cmd *ExportCmd) exportJSON(s *session.Session, roles map[string]bool, maxChars, maxToolChars int, includeToolResults bool, searchFilter string) error {
 	f, err := os.Open(s.FilePath)
 	if err != nil {
 		return fmt.Errorf("cannot open session file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
-	messages := collectMessages(f, roles, cmd.IncludeToolResults, searchFilter)
+	messages, _ := collectMessages(f, roles, includeToolResults, searchFilter, maxToolChars)
 
 	if cmd.Limit > 0 && len(messages) > cmd.Limit {
 		messages = messages[len(messages)-cmd.Limit:]
@@ -225,7 +277,7 @@ func (cmd *ExportCmd) exportJSON(s *session.Session, roles map[string]bool, maxC
 	for _, msg := range messages {
 		text := msg.text
 		if maxChars > 0 && len(text) > maxChars {
-			text = output.Truncate(text, maxChars)
+			text = output.TruncateWithCount(text, maxChars)
 		}
 		jm := exportJSONMessage{
 			Role: msg.role,

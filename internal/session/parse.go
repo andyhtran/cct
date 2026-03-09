@@ -82,8 +82,8 @@ func ExtractPromptBlocks(obj map[string]any) []ContentBlock {
 	return ExtractContentBlocks(msg["content"])
 }
 
-// skipTypes lists content block types that never contain searchable text.
-var skipTypes = map[string]bool{
+// SkipTypes lists content block types that never contain searchable text.
+var SkipTypes = map[string]bool{
 	"thinking":          true,
 	"redacted_thinking": true,
 	"image":             true,
@@ -142,7 +142,7 @@ func extractBlocks(content any, depth int) []ContentBlock {
 
 func extractBlockEntries(block map[string]any, depth int) []ContentBlock {
 	blockType, _ := block["type"].(string)
-	if skipTypes[blockType] {
+	if SkipTypes[blockType] {
 		return nil
 	}
 	if blockType == "tool_use" {
@@ -195,7 +195,7 @@ func extractText(content any, depth int) string {
 
 func extractBlockText(block map[string]any, depth int) string {
 	blockType, _ := block["type"].(string)
-	if skipTypes[blockType] {
+	if SkipTypes[blockType] {
 		return ""
 	}
 	if blockType == "tool_use" {

@@ -35,6 +35,23 @@ func Truncate(s string, maxLen int) string {
 	return s
 }
 
+// TruncateWithCount truncates s to maxLen runes and appends a count of
+// remaining characters, e.g. "some text... [+1,234 chars]". Unlike Truncate,
+// it preserves newlines so that markdown structure is maintained.
+func TruncateWithCount(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	remaining := len(runes) - maxLen
+	suffix := fmt.Sprintf("... [+%d chars]", remaining)
+	cut := maxLen - len(suffix) // suffix is ASCII
+	if cut < 0 {
+		cut = 0
+	}
+	return string(runes[:cut]) + suffix
+}
+
 // HighlightKeyword returns the string with the first occurrence of keyword
 // highlighted (bold) and the surrounding text dimmed. Case-insensitive match.
 func HighlightKeyword(s, keyword string) string {
