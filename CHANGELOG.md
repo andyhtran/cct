@@ -6,12 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-
-- `export`: default output is now full (no truncation) — conversation text is shown complete
-- `export`: truncation uses `[+N chars]` indicator so users know content was cut
-- `export`: tool results (with `--include-tool-results`) are truncated independently via `--max-tool-chars` (default 2000) while conversation text stays full
-- `export`: `--full` now also includes tool results (acts as "show everything")
+## [0.5.0] - 2026-03-08
 
 ### Added
 
@@ -19,6 +14,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `export`: `--max-tool-chars` flag to control tool result truncation separately
 - `export`: contextual hints on stderr when tool blocks are skipped or messages are truncated, suggesting relevant flags
 - `CCT_NO_HINTS` environment variable to suppress stderr hints
+
+### Changed
+
+- `export`: default output is now full (no truncation) — conversation text is shown complete
+- `export`: truncation uses `[+N chars]` indicator so users know content was cut
+- `export`: tool results (with `--include-tool-results`) are truncated independently via `--max-tool-chars` (default 2000) while conversation text stays full
+- `export`: `--full` now also includes tool results (acts as "show everything")
+
+### Fixed
+
+- `resume`: recreate missing project directory instead of failing — allows resuming sessions for review even if the project was deleted or renamed
 
 ## [0.4.0] - 2026-03-06
 
