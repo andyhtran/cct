@@ -94,6 +94,27 @@ func TestHighlightKeyword_no_match_dims_entire_string(t *testing.T) {
 	}
 }
 
+func TestTruncateWithCount(t *testing.T) {
+	tests := []struct {
+		input string
+		max   int
+		want  string
+	}{
+		{"short", 100, "short"},
+		{"hello world this is a long message that should be truncated", 30, "hello world thi... [+29 chars]"},
+		{"preserves\nnewlines\nin output", 100, "preserves\nnewlines\nin output"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := TruncateWithCount(tt.input, tt.max)
+			if got != tt.want {
+				t.Errorf("TruncateWithCount(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.want)
+			}
+		})
+	}
+}
+
 func ExampleExtractSnippet() {
 	text := "The quick brown fox jumps over the lazy dog"
 	snippet := ExtractSnippet(text, "fox", 30)

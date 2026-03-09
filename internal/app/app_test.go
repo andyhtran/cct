@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -333,6 +334,156 @@ func TestExportCmd(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(out), []byte("## Assistant")) {
 		t.Error("expected assistant section")
+	}
+}
+
+func TestExportCmd_NoTruncationByDefault(t *testing.T) {
+	home := setupFixtures(t)
+
+	// Create a session with a long assistant message (>500 chars).
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	longText := strings.Repeat("word ", 200) // 1000 chars
+	sessionLines := []string{
+		`{"type":"user","message":{"role":"user","content":"tell me something long"},"cwd":"/Users/test/myproject","sessionId":"long1234-5678-9abc-def0-222222222222","timestamp":"2026-03-01T10:00:00Z"}`,
+		fmt.Sprintf(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"%s"}]},"timestamp":"2026-03-01T10:00:05Z"}`, longText),
+	}
+	writeLines(t, filepath.Join(projDir, "long1234-5678-9abc-def0-222222222222.jsonl"), sessionLines)
+
+	globals := &Globals{}
+	cmd := &ExportCmd{ID: "long1234", Role: "user,assistant"}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(out, longText) {
+		t.Error("expected full message text without truncation by default")
+	}
+}
+
+func TestExportCmd_Short(t *testing.T) {
+	home := setupFixtures(t)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	longText := strings.Repeat("word ", 200)
+	sessionLines := []string{
+		`{"type":"user","message":{"role":"user","content":"tell me something long"},"cwd":"/Users/test/myproject","sessionId":"short123-5678-9abc-def0-333333333333","timestamp":"2026-03-01T10:00:00Z"}`,
+		fmt.Sprintf(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"%s"}]},"timestamp":"2026-03-01T10:00:05Z"}`, longText),
+	}
+	writeLines(t, filepath.Join(projDir, "short123-5678-9abc-def0-333333333333.jsonl"), sessionLines)
+
+	globals := &Globals{}
+	cmd := &ExportCmd{ID: "short123", Role: "user,assistant", Short: true}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if strings.Contains(out, longText) {
+		t.Error("expected truncated output with --short flag")
+	}
+	if !strings.Contains(out, "[+") {
+		t.Error("expected truncation count indicator")
+	}
+}
+
+func TestExportCmd_ToolResultTruncation(t *testing.T) {
+	home := setupFixtures(t)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	longToolOutput := strings.Repeat("line of tool output ", 150) // 3000 chars
+	sessionLines := []string{
+		fmt.Sprintf(`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"%s"},{"type":"text","text":"read something"}]},"cwd":"/Users/test/myproject","sessionId":"tool1234-5678-9abc-def0-444444444444","timestamp":"2026-03-01T10:00:00Z"}`, longToolOutput),
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Here is the file content."}]},"timestamp":"2026-03-01T10:00:05Z"}`,
+	}
+	writeLines(t, filepath.Join(projDir, "tool1234-5678-9abc-def0-444444444444.jsonl"), sessionLines)
+
+	globals := &Globals{}
+	cmd := &ExportCmd{ID: "tool1234", Role: "user,assistant", IncludeToolResults: true, MaxToolChars: 100}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Conversation text should be untruncated.
+	if !strings.Contains(out, "read something") {
+		t.Error("conversation text should not be truncated")
+	}
+	// Tool result block should be truncated with indicator.
+	if !strings.Contains(out, "[+") {
+		t.Error("expected tool result truncation with count indicator")
+	}
+	if strings.Contains(out, longToolOutput) {
+		t.Error("tool result output should be truncated")
+	}
+}
+
+func TestExportCmd_FullIncludesToolResults(t *testing.T) {
+	home := setupFixtures(t)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	sessionLines := []string{
+		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"file contents here"},{"type":"text","text":"check this"}]},"cwd":"/Users/test/myproject","sessionId":"full1234-5678-9abc-def0-555555555555","timestamp":"2026-03-01T10:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Got it."}]},"timestamp":"2026-03-01T10:00:05Z"}`,
+	}
+	writeLines(t, filepath.Join(projDir, "full1234-5678-9abc-def0-555555555555.jsonl"), sessionLines)
+
+	globals := &Globals{}
+	cmd := &ExportCmd{ID: "full1234", Role: "user,assistant", Full: true}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(out, "file contents here") {
+		t.Error("--full should include tool result content")
+	}
+}
+
+func TestExportCmd_HintOnSkippedToolBlocks(t *testing.T) {
+	home := setupFixtures(t)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	sessionLines := []string{
+		`{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"big output"},{"type":"text","text":"check this"}]},"cwd":"/Users/test/myproject","sessionId":"hint1234-5678-9abc-def0-666666666666","timestamp":"2026-03-01T10:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done."},{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]},"timestamp":"2026-03-01T10:00:05Z"}`,
+	}
+	writeLines(t, filepath.Join(projDir, "hint1234-5678-9abc-def0-666666666666.jsonl"), sessionLines)
+
+	// Capture stderr for hints.
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	globals := &Globals{}
+	cmd := &ExportCmd{ID: "hint1234", Role: "user,assistant"}
+
+	captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	_ = w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	hints := buf.String()
+
+	if !strings.Contains(hints, "tool block(s) skipped") {
+		t.Errorf("expected hint about skipped tool blocks, got: %q", hints)
+	}
+	if !strings.Contains(hints, "--include-tool-results") {
+		t.Errorf("expected hint to mention --include-tool-results flag, got: %q", hints)
 	}
 }
 
