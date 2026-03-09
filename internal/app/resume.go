@@ -39,8 +39,14 @@ func (cmd *ResumeCmd) Run(globals *Globals) error {
 
 	dir := match.ProjectPath
 	if dir != "" {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			return fmt.Errorf("project directory no longer exists: %s\nUse --dry-run to see the command", dir)
+		if _, err := os.Stat(dir); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("cannot access project directory: %s: %w", dir, err)
+			}
+			if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+				return fmt.Errorf("project directory missing and could not be created: %s: %w", dir, mkErr)
+			}
+			fmt.Fprintf(os.Stderr, "Created missing directory: %s\n", dir)
 		}
 	}
 
