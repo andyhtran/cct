@@ -18,7 +18,8 @@ A fast, read-only CLI for browsing, searching, and managing your [Claude Code](h
 brew install andyhtran/tap/cct
 ```
 
-### Option B — Build locally
+<details>
+<summary>Option B — Build locally</summary>
 
 ```bash
 git clone https://github.com/andyhtran/cct.git
@@ -27,11 +28,12 @@ go build -o dist/cct ./cmd/cct
 ./dist/cct --help
 ```
 
+</details>
+
 ## Update
 
 ```bash
-brew update
-brew upgrade cct
+brew update && brew upgrade cct
 ```
 
 ## Commands
