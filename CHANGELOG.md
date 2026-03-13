@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-13
+
+### Added
+
+- `view`: interactive TUI for viewing session history with scrollable viewport, vim-style navigation (j/k/g/G/q), colored user/assistant messages, and inline tool call display
+- `export --render`: styled terminal output with syntax highlighting via glamour, colored role headers, works with pipes
+
 ## [0.5.0] - 2026-03-08
 
 ### Added
