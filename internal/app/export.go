@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/andyhtran/cct/internal/output"
+	"github.com/andyhtran/cct/internal/render"
 	"github.com/andyhtran/cct/internal/session"
 )
 
@@ -16,6 +17,7 @@ type ExportCmd struct {
 	ID                 string `arg:"" help:"Session ID or prefix"`
 	Full               bool   `help:"Show everything (no truncation, include tool results)"`
 	Short              bool   `help:"Compact output (truncate messages to 500 chars)"`
+	Render             bool   `help:"Render with syntax highlighting (styled terminal output)"`
 	Output             string `short:"o" help:"Output file (default: stdout)"`
 	Role               string `short:"r" help:"Filter by role (comma-separated: user,assistant)" default:"user,assistant"`
 	Limit              int    `short:"n" help:"Last N messages (0=all)" default:"0"`
@@ -47,6 +49,15 @@ func (cmd *ExportCmd) Run(globals *Globals) error {
 
 	if globals.JSON {
 		return cmd.exportJSON(match, roles, maxChars, maxToolChars, includeToolResults, cmd.Search)
+	}
+
+	if cmd.Render {
+		return render.RenderSession(match, render.Options{
+			MaxChars:           maxChars,
+			MaxToolChars:       maxToolChars,
+			IncludeToolResults: includeToolResults,
+			Limit:              cmd.Limit,
+		})
 	}
 
 	md, stats, err := renderMarkdown(match, roles, maxChars, maxToolChars, cmd.Limit, includeToolResults, cmd.Search)

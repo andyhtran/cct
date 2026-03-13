@@ -25,6 +25,7 @@ type CLI struct {
 	Info        InfoCmd      `cmd:"" help:"Show session metadata and first prompt"`
 	Resume      ResumeCmd    `cmd:"" help:"Resume a session (auto-switches directory)"`
 	Export      ExportCmd    `cmd:"" help:"Export session messages (with filtering)"`
+	View        ViewCmd      `cmd:"" help:"View session in interactive TUI"`
 	Plans       PlansCmd     `cmd:"" help:"Browse and search plans"`
 	Stats       StatsCmd     `cmd:"" help:"Session statistics"`
 	Changelog   ChangelogCmd `cmd:"" aliases:"log" help:"Show Claude Code changelog"`
