@@ -43,7 +43,7 @@ func Run(version string) int {
 	var cli CLI
 	k, err := kong.New(&cli,
 		kong.Name("cct"),
-		kong.Description("Claude Code utility CLI"),
+		kong.Description("Claude Code Tools"),
 		kong.Vars{"version": "cct " + appVersion},
 		kong.ConfigureHelp(kong.HelpOptions{
 			Compact: true,

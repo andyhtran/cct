@@ -1,155 +1,106 @@
-# 📋 cct — Claude Code Tools: list, search, resume
+# cct — Search and browse your Claude Code sessions
 
-A fast, read-only CLI for browsing, searching, and managing your [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions from the terminal.
+Claude Code sessions are ephemeral. When you need context from yesterday's debugging session or last week's architecture decision, there's no easy way to find it. `cct` makes your session history searchable — for you and for Claude itself.
 
-- Browse and search past conversations
-- View session details and export to markdown
-- Resume sessions with automatic directory switching
-- Manage plans and view changelogs
-- Aggregate usage statistics across projects
+![cct view and export](docs/demo.png)
 
-> Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed. macOS and Linux (amd64/arm64).
+> Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code). macOS and Linux.
 
 ## Install
-
-### Option A — Homebrew (Recommended)
 
 ```bash
 brew install andyhtran/tap/cct
 ```
 
 <details>
-<summary>Option B — Build locally</summary>
+<summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/andyhtran/cct.git
-cd cct
-go build -o dist/cct ./cmd/cct
-./dist/cct --help
+cd cct && go build -o cct ./cmd/cct
 ```
 
 </details>
 
-## Update
+## Finding past sessions
+
+Search across all your conversations:
 
 ```bash
-brew update && brew upgrade cct
+cct search "database migration"       # Find sessions mentioning a topic
+cct search "auth bug" -p backend      # Filter to a specific project
 ```
 
-## Commands
-
-### Browse sessions
-
-List your Claude Code sessions, sorted by most recent.
+List recent sessions:
 
 ```bash
-cct                    # Quick view: 5 most recent sessions
-cct list               # List up to 15 most recent sessions
-cct list -p myproject  # Filter to sessions whose project name contains "myproject"
-cct list -n 50         # Show up to 50 sessions
-cct list -a            # Show all sessions (no limit)
+cct                     # Quick view: 5 most recent
+cct list -p myproject   # Filter by project name
+cct list -a             # Show all sessions
 ```
 
-### Search conversations
+## Getting full context
 
-Full-text search across message content in your Claude Code sessions.
+View a session in your terminal:
 
 ```bash
-cct search "database migration"          # Search all sessions
-cct search "auth" -p backend             # Only search sessions in projects matching "backend"
+cct view <id>           # Interactive TUI viewer
 ```
 
-The `-p` flag filters by project name (case-insensitive substring match), so `-p backend` matches projects like `my-backend-api` or `backend-service`.
-
-### Session details
-
-Show metadata for a single session: project path, git branch, timestamps, message count, and the first prompt.
+Export to markdown:
 
 ```bash
-cct info <id>          # Accepts full ID or an 8-char prefix
+cct export <id>         # Truncated output
+cct export <id> --full  # Complete conversation
 ```
 
-### Resume a session
+> **Why not `claude --resume`?** There are known issues where resumed sessions don't load full context ([#15837](https://github.com/anthropics/claude-code/issues/15837), [#22107](https://github.com/anthropics/claude-code/issues/22107)). Use `cct view` or `cct export` when you need the complete conversation.
 
-Open a past session in Claude Code, automatically switching to the original project directory.
+## Resuming work
 
 ```bash
-cct resume <id>            # cd into the project dir and run `claude --resume <id>`
-cct resume <id> --dry-run  # Print the command without running it
+cct resume <id>         # cd to project dir and run claude --resume
 ```
 
-### Export session as markdown
+## Use with Claude Code agents
 
-Convert a session's conversation into a readable markdown document.
+Add to your `CLAUDE.md` to let Claude search your session history:
+
+```markdown
+Use `cct search <query>` to find relevant past sessions.
+Use `cct export <id> --full` to read full conversation context.
+```
+
+Then prompt naturally:
+
+```
+use cct to find sessions where we debugged the auth issue
+```
+
+This turns your session history into a searchable knowledge base that Claude can query.
+
+## Other commands
 
 ```bash
-cct export <id>            # Assistant responses truncated to 200 chars
-cct export <id> --full     # Full untruncated assistant responses
-cct export <id> -o out.md  # Write to file instead of stdout
+cct info <id>    # Session metadata: project, branch, timestamps
+cct stats        # Usage statistics across all projects
 ```
 
-### Plans
+Run `cct --help` for additional commands.
 
-Browse and copy Claude Code plan files stored in `~/.claude/plans/`.
+## JSON output
+
+All commands support `--json` for scripting:
 
 ```bash
-cct plans                          # List all plans with titles and ages
-cct plans search "auth"            # Search within plan file contents
-cct plans cp my-plan               # Copy a plan to the current directory
-cct plans cp my-plan --as design   # Copy with a custom filename (.md auto-appended)
+cct search "bug" --json | jq -r '.[].session.short_id'
 ```
-
-### Changelog
-
-View the Claude Code release changelog (read from `~/.claude/cache/changelog.md`).
-
-```bash
-cct changelog            # Show the latest version's release notes
-cct changelog 2.1.49     # Show notes for a specific version
-cct changelog --recent 5 # Show the last 5 versions
-cct changelog --all      # Show the full changelog
-```
-
-### Statistics
-
-View aggregate statistics about your Claude Code usage across all projects.
-
-```bash
-cct stats       # Total sessions, unique projects, weekly/monthly activity, top projects
-```
-
-### Version
-
-```bash
-cct version     # Show cct version and the installed Claude Code version
-```
-
-## Global flags
-
-| Flag | Description |
-|------|-------------|
-| `--json` | Output as JSON (supported by all commands) |
-| `--version`, `-v` | Print version and exit |
-| `--help` | Show help |
 
 ## How it works
 
-`cct` reads Claude Code session data from `~/.claude/projects/` (JSONL files), plan files from `~/.claude/plans/`, and changelog from `~/.claude/cache/changelog.md`. All operations are read-only except `plans cp` which copies a file to your current directory.
+`cct` reads session data from `~/.claude/projects/` (JSONL files). All operations are read-only.
 
-> **Note:** The Claude Code JSONL data format is undocumented and may change between versions. `cct` is tested against the current format but may need updates when Claude Code changes its storage layout.
-
-## Development
-
-Prerequisites: Go 1.25+, [gofumpt](https://github.com/mvdan/gofumpt), [golangci-lint](https://golangci-lint.run/), [just](https://github.com/casey/just)
-
-```bash
-just build        # Build to dist/cct
-just test         # Run tests
-just cover        # Tests with coverage
-just fmt          # Format with gofumpt
-just fmt-check    # Check formatting (CI)
-just lint         # Run golangci-lint
-```
+> The Claude Code data format is undocumented and may change between versions.
 
 ## License
 
