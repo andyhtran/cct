@@ -21,7 +21,7 @@ type CLI struct {
 
 	Default     DefaultCmd   `cmd:"" default:"noargs" hidden:""`
 	List        ListCmd      `cmd:"" help:"List recent sessions"`
-	Search      SearchCmd    `cmd:"" help:"Search session content"`
+	Search      SearchCmd    `cmd:"" help:"Search session content\n\nJSON fields: id, short_id, project_name, project_path, created, modified, first_prompt, git_branch, message_count, matches, score\n\nExample: cct search 'query' --json | jq '.[] | {short_id, project_name, created}'"`
 	Info        InfoCmd      `cmd:"" help:"Show session metadata and first prompt"`
 	Resume      ResumeCmd    `cmd:"" help:"Resume a session (auto-switches directory)"`
 	Export      ExportCmd    `cmd:"" help:"Export session messages (with filtering)"`

@@ -36,8 +36,8 @@ type Match struct {
 }
 
 type SearchResult struct {
-	Session *Session `json:"session"`
-	Matches []Match  `json:"matches"`
+	*Session
+	Matches []Match `json:"matches"`
 }
 
 func ExtractIDFromFilename(path string) string {

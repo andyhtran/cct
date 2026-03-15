@@ -97,7 +97,7 @@ func SearchPlans(query string, snippetWidth int) ([]PlanMatch, error) {
 }
 
 type PlanMatch struct {
-	Plan    Plan   `json:"plan"`
+	Plan
 	Snippet string `json:"snippet"`
 }
 
