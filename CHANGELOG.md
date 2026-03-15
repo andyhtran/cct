@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-15
+
+### Changed
+
+- `search --json`: session fields are now top-level instead of nested under a `session` key — `.id`, `.project_name`, `.created` work directly in jq
+- `plans search --json`: plan fields are now top-level instead of nested under a `plan` key
+- `search --help`: now lists available JSON fields and shows a jq example
+
 ## [1.0.0] - 2026-03-15
 
 ### Added
