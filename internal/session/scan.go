@@ -155,7 +155,7 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 		}
 
 		if lineType == "user" {
-			extractUserMetadata(s, obj)
+			ExtractUserMetadata(s, obj)
 		}
 
 		if maxMatches > 0 && len(matches) >= maxMatches {

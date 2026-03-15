@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andyhtran/cct/internal/index"
 )
 
 // setupFixtures creates a fake ~/.claude tree with session, plan, and changelog
@@ -19,6 +21,7 @@ func setupFixtures(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 
 	claudeDir := filepath.Join(home, ".claude")
 	projectsDir := filepath.Join(claudeDir, "projects")
@@ -151,6 +154,9 @@ func TestSearchCmd_JSON(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatal("expected at least 1 search result")
+	}
+	if _, ok := results[0]["session"]; !ok {
+		t.Fatal("expected session field in result")
 	}
 }
 
@@ -556,6 +562,92 @@ func TestShellQuote(t *testing.T) {
 				t.Errorf("shellQuote(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatSyncResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *index.SyncResult
+		want   string
+	}{
+		{
+			"up to date with sessions",
+			&index.SyncResult{Unchanged: 100},
+			"Already up to date (100 sessions)",
+		},
+		{
+			"up to date empty index",
+			&index.SyncResult{},
+			"Already up to date",
+		},
+		{
+			"only new",
+			&index.SyncResult{Added: 3, Unchanged: 97},
+			"Synced 3 new (97 unchanged)",
+		},
+		{
+			"only updated",
+			&index.SyncResult{Updated: 2, Unchanged: 98},
+			"Synced 2 updated (98 unchanged)",
+		},
+		{
+			"new and updated",
+			&index.SyncResult{Added: 3, Updated: 2, Unchanged: 95},
+			"Synced 3 new, 2 updated (95 unchanged)",
+		},
+		{
+			"all types",
+			&index.SyncResult{Added: 1, Updated: 2, Deleted: 3, Unchanged: 94},
+			"Synced 1 new, 2 updated, 3 deleted (94 unchanged)",
+		},
+		{
+			"changes with zero unchanged",
+			&index.SyncResult{Added: 5},
+			"Synced 5 new",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatSyncResult(tt.result)
+			if got != tt.want {
+				t.Errorf("formatSyncResult() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSearchCmd_ProjectNotFound(t *testing.T) {
+	setupFixtures(t)
+
+	globals := &Globals{JSON: false}
+	cmd := &SearchCmd{Query: "database", Project: "nonexistent_xyz"}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(out, `No project matching "nonexistent_xyz"`) {
+		t.Errorf("expected 'No project matching' message, got: %q", out)
+	}
+}
+
+func TestSearchCmd_ProjectExistsNoQueryMatch(t *testing.T) {
+	setupFixtures(t)
+
+	globals := &Globals{JSON: false}
+	cmd := &SearchCmd{Query: "zzz_impossible_term_zzz", Project: "myproject"}
+
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if !strings.Contains(out, `No sessions matching`) || !strings.Contains(out, `in project "myproject"`) {
+		t.Errorf("expected 'No sessions matching ... in project' message, got: %q", out)
 	}
 }
 

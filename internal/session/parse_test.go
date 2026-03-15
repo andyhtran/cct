@@ -282,7 +282,7 @@ func TestExtractUserMetadata(t *testing.T) {
 			"message":   map[string]any{"role": "user", "content": "implement auth"},
 		}
 
-		complete := extractUserMetadata(s, obj)
+		complete := ExtractUserMetadata(s, obj)
 		if !complete {
 			t.Error("expected complete=true when ProjectPath and FirstPrompt are set")
 		}
@@ -322,7 +322,7 @@ func TestExtractUserMetadata(t *testing.T) {
 			"message":   map[string]any{"role": "user", "content": "new prompt"},
 		}
 
-		complete := extractUserMetadata(s, obj)
+		complete := ExtractUserMetadata(s, obj)
 		if !complete {
 			t.Error("expected complete=true")
 		}
@@ -351,7 +351,7 @@ func TestExtractUserMetadata(t *testing.T) {
 			"message":   map[string]any{"role": "user", "content": "sub-agent task"},
 		}
 
-		extractUserMetadata(s, obj)
+		ExtractUserMetadata(s, obj)
 		if s.ID != "agent-19b8cb-fake-uuid" {
 			t.Errorf("ID = %q, want %q (sub-agent ID must not be replaced by parent sessionId)", s.ID, "agent-19b8cb-fake-uuid")
 		}
@@ -367,7 +367,7 @@ func TestExtractUserMetadata(t *testing.T) {
 			"message": map[string]any{"role": "user", "content": []any{}},
 		}
 
-		complete := extractUserMetadata(s, obj)
+		complete := ExtractUserMetadata(s, obj)
 		if complete {
 			t.Error("expected complete=false when FirstPrompt is empty")
 		}
@@ -397,4 +397,54 @@ func TestParseTimestamp(t *testing.T) {
 			t.Errorf("expected zero time, got %v", got)
 		}
 	})
+}
+
+func TestOffsetScanner(t *testing.T) {
+	lines := "line one\nline two\nline three\n"
+	scanner := NewOffsetScanner(strings.NewReader(lines))
+
+	type expected struct {
+		text   string
+		offset int64
+		length int
+	}
+
+	want := []expected{
+		{"line one", 0, 9},     // "line one\n" = 9 bytes
+		{"line two", 9, 9},     // "line two\n" = 9 bytes
+		{"line three", 18, 11}, // "line three\n" = 11 bytes
+	}
+
+	for i, w := range want {
+		if !scanner.Scan() {
+			t.Fatalf("line %d: Scan() returned false early", i)
+		}
+		if got := string(scanner.Bytes()); got != w.text {
+			t.Errorf("line %d: Bytes() = %q, want %q", i, got, w.text)
+		}
+		if got := scanner.Offset(); got != w.offset {
+			t.Errorf("line %d: Offset() = %d, want %d", i, got, w.offset)
+		}
+		if got := scanner.Length(); got != w.length {
+			t.Errorf("line %d: Length() = %d, want %d", i, got, w.length)
+		}
+	}
+
+	if scanner.Scan() {
+		t.Error("expected Scan() to return false after last line")
+	}
+}
+
+func TestOffsetScanner_NoTrailingNewline(t *testing.T) {
+	scanner := NewOffsetScanner(strings.NewReader("only line"))
+
+	if !scanner.Scan() {
+		t.Fatal("expected Scan() to return true")
+	}
+	if got := string(scanner.Bytes()); got != "only line" {
+		t.Errorf("Bytes() = %q, want %q", got, "only line")
+	}
+	if got := scanner.Offset(); got != 0 {
+		t.Errorf("Offset() = %d, want 0", got)
+	}
 }
