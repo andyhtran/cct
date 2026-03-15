@@ -241,9 +241,9 @@ func ParseTimestamp(obj map[string]any) time.Time {
 	return t
 }
 
-// extractUserMetadata populates session fields from a parsed user message.
+// ExtractUserMetadata populates session fields from a parsed user message.
 // Returns true when all essential metadata (ProjectPath and FirstPrompt) is populated.
-func extractUserMetadata(s *Session, obj map[string]any) bool {
+func ExtractUserMetadata(s *Session, obj map[string]any) bool {
 	if s.ProjectPath == "" {
 		s.ProjectPath, _ = obj["cwd"].(string)
 		s.ProjectName = filepath.Base(s.ProjectPath)
@@ -261,9 +261,91 @@ func extractUserMetadata(s *Session, obj map[string]any) bool {
 func ExtractMetadata(path string) *Session  { return parseSession(path, false) }
 func ParseFullSession(path string) *Session { return parseSession(path, true) }
 
-// parseSession is the shared implementation for metadata extraction and full parsing.
-// When full is true, it counts all messages and reads the entire file.
-// When full is false, it returns early once project path and first prompt are found.
+// OffsetScanner wraps a reader to track byte offsets for each line.
+type OffsetScanner struct {
+	reader  *bufio.Reader
+	offset  int64
+	lineLen int
+	line    []byte
+	err     error
+}
+
+// NewOffsetScanner creates a scanner that tracks byte positions.
+func NewOffsetScanner(r io.Reader) *OffsetScanner {
+	return &OffsetScanner{
+		reader: bufio.NewReaderSize(r, scanInitBuf),
+	}
+}
+
+// Scan advances to the next line, returning true if a line was read.
+func (s *OffsetScanner) Scan() bool {
+	s.offset += int64(s.lineLen)
+	s.line, s.err = s.reader.ReadBytes('\n')
+	s.lineLen = len(s.line)
+	if s.err != nil && len(s.line) == 0 {
+		return false
+	}
+	return true
+}
+
+// Bytes returns the current line (without trailing newline).
+func (s *OffsetScanner) Bytes() []byte {
+	if len(s.line) > 0 && s.line[len(s.line)-1] == '\n' {
+		return s.line[:len(s.line)-1]
+	}
+	return s.line
+}
+
+// Offset returns the byte offset of the current line in the file.
+func (s *OffsetScanner) Offset() int64 {
+	return s.offset
+}
+
+// Length returns the byte length of the current line (including newline).
+func (s *OffsetScanner) Length() int {
+	return s.lineLen
+}
+
+// ReadMessageAtOffset reads a single JSONL line at the given byte offset.
+func ReadMessageAtOffset(filePath string, offset int64, length int) (role, source, text string, err error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return "", "", "", err
+	}
+
+	buf := make([]byte, length)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && n == 0 {
+		return "", "", "", err
+	}
+	buf = buf[:n]
+
+	var obj map[string]any
+	if err := json.Unmarshal(buf, &obj); err != nil {
+		return "", "", "", err
+	}
+
+	role = FastExtractType(buf)
+	blocks := ExtractPromptBlocks(obj)
+	if len(blocks) > 0 {
+		source = blocks[0].Source
+		var texts []string
+		for _, b := range blocks {
+			if b.Text != "" {
+				texts = append(texts, b.Text)
+			}
+		}
+		text = strings.Join(texts, " ")
+	}
+
+	return role, source, text, nil
+}
+
 func parseSession(path string, full bool) *Session {
 	f, err := os.Open(path)
 	if err != nil {
@@ -299,7 +381,7 @@ func parseSession(path string, full bool) *Session {
 			if json.Unmarshal(line, &obj) != nil {
 				continue
 			}
-			complete := extractUserMetadata(s, obj)
+			complete := ExtractUserMetadata(s, obj)
 			if !full && complete {
 				return s
 			}

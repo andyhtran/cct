@@ -31,6 +31,7 @@ type CLI struct {
 	Changelog   ChangelogCmd `cmd:"" aliases:"log" help:"Show Claude Code changelog"`
 	VersionInfo VersionCmd   `cmd:"" name:"version" help:"Show version information"`
 	Schema      SchemaCmd    `cmd:"" help:"Show CLI schema as JSON (for tooling)"`
+	Index       IndexCmd     `cmd:"" help:"Manage search index"`
 }
 
 type Globals struct {
