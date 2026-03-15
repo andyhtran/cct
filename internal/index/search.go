@@ -33,9 +33,9 @@ type SearchOptions struct {
 }
 
 type SearchResult struct {
-	Session *session.Session `json:"session"`
-	Matches []session.Match  `json:"matches"`
-	Score   float64          `json:"score"`
+	*session.Session
+	Matches []session.Match `json:"matches"`
+	Score   float64         `json:"score"`
 }
 
 type sessionInfo struct {

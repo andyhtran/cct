@@ -471,8 +471,8 @@ func TestSearch_CompoundTermFiltering(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result for 'pre-commit', got %d", len(results))
 	}
-	if results[0].Session.ID != "match111-2222-3333-4444-555555555555" {
-		t.Errorf("expected matching session, got %s", results[0].Session.ID)
+	if results[0].ID != "match111-2222-3333-4444-555555555555" {
+		t.Errorf("expected matching session, got %s", results[0].ID)
 	}
 }
 
@@ -534,8 +534,8 @@ func TestSearch_CrossMessageMultiTerm(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result for cross-message 'fix bug', got %d", len(results))
 	}
-	if results[0].Session.ID != "cross111-2222-3333-4444-555555555555" {
-		t.Errorf("expected cross-message session, got %s", results[0].Session.ID)
+	if results[0].ID != "cross111-2222-3333-4444-555555555555" {
+		t.Errorf("expected cross-message session, got %s", results[0].ID)
 	}
 }
 

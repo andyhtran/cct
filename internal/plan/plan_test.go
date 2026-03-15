@@ -122,8 +122,8 @@ func TestSearchPlans(t *testing.T) {
 		if len(matches) != 1 {
 			t.Fatalf("expected 1 match, got %d", len(matches))
 		}
-		if matches[0].Plan.Name != "auth-refactor" {
-			t.Errorf("matched plan = %q, want auth-refactor", matches[0].Plan.Name)
+		if matches[0].Name != "auth-refactor" {
+			t.Errorf("matched plan = %q, want auth-refactor", matches[0].Name)
 		}
 	})
 

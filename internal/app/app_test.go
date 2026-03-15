@@ -155,8 +155,8 @@ func TestSearchCmd_JSON(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected at least 1 search result")
 	}
-	if _, ok := results[0]["session"]; !ok {
-		t.Fatal("expected session field in result")
+	if _, ok := results[0]["id"]; !ok {
+		t.Fatal("expected id field in result (flattened session)")
 	}
 }
 

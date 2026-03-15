@@ -136,9 +136,9 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 	for _, m := range matches {
 		tbl.Row(
 			[]string{
-				output.Truncate(m.Plan.Name, tbl.ColWidth(0)),
-				output.FormatAge(m.Plan.Modified),
-				output.Truncate(m.Plan.Title, tbl.ColWidth(2)),
+				output.Truncate(m.Name, tbl.ColWidth(0)),
+				output.FormatAge(m.Modified),
+				output.Truncate(m.Title, tbl.ColWidth(2)),
 				m.Snippet,
 			},
 			[]func(string) string{output.Dim, output.Dim, output.Bold, nil},
@@ -147,7 +147,7 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 
 	if len(matches) > 0 {
 		fmt.Println()
-		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct plans cp %s", matches[0].Plan.Name)))
+		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct plans cp %s", matches[0].Name)))
 	}
 	fmt.Println()
 	return nil
