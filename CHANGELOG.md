@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-15
+
+### Added
+
+- FTS5 full-text search index for session history — searches now use SQLite's FTS5 engine for faster, more accurate full-text matching
+
 ## [0.6.0] - 2026-03-13
 
 ### Added
