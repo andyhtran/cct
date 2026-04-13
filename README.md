@@ -12,6 +12,12 @@ Claude Code sessions are ephemeral. When you need context from yesterday's debug
 brew install andyhtran/tap/cct
 ```
 
+To update:
+
+```bash
+brew update && brew upgrade cct
+```
+
 <details>
 <summary>Build from source</summary>
 
