@@ -13,11 +13,11 @@ import (
 )
 
 type PlansCmd struct {
-	List   PlansListCmd     `cmd:"" default:"1" help:"List recent plans"`
-	Search PlansSearchCmd   `cmd:"" help:"Search plan content"`
-	Cp     PlansCpCmd       `cmd:"" help:"Copy a plan to current directory"`
-	View   PlansViewCmd     `cmd:"" help:"View a plan in the terminal"`
-	Export PlansExportCmd   `cmd:"" help:"Export plan markdown to stdout"`
+	List   PlansListCmd   `cmd:"" default:"1" help:"List recent plans"`
+	Search PlansSearchCmd `cmd:"" help:"Search plan content"`
+	Cp     PlansCpCmd     `cmd:"" help:"Copy a plan to current directory"`
+	View   PlansViewCmd   `cmd:"" help:"View a plan in the terminal"`
+	Export PlansExportCmd `cmd:"" help:"Export plan markdown to stdout"`
 }
 
 type PlansListCmd struct {
