@@ -89,7 +89,7 @@ func printHints(stats exportStats) {
 		return
 	}
 	if stats.toolBlocksSkipped > 0 {
-		fmt.Fprintf(os.Stderr, "hint: %d tool block(s) skipped (use --include-tool-results or --full to include)\n", stats.toolBlocksSkipped)
+		fmt.Fprintf(os.Stderr, "hint: %d tool result(s) skipped (use --include-tool-results or --full to include)\n", stats.toolBlocksSkipped)
 	}
 	if stats.messagesTruncated > 0 {
 		fmt.Fprintf(os.Stderr, "hint: %d message(s) truncated (use --full for complete output)\n", stats.messagesTruncated)
@@ -233,15 +233,15 @@ func extractContent(obj map[string]any, includeToolResults bool, maxToolChars in
 			continue
 		}
 
-		isToolBlock := blockType == "tool_result" || blockType == "tool_use"
-
-		if isToolBlock && !includeToolResults {
+		if blockType == "tool_result" && !includeToolResults {
 			skipped++
 			continue
 		}
 
 		var text string
-		if isToolBlock {
+		if blockType == "tool_use" {
+			text = render.FormatToolUse(block)
+		} else if blockType == "tool_result" {
 			text = session.ExtractTextFromContent(item)
 		} else if t, ok := block["text"].(string); ok {
 			text = t
@@ -251,7 +251,7 @@ func extractContent(obj map[string]any, includeToolResults bool, maxToolChars in
 			continue
 		}
 
-		if isToolBlock && maxToolChars > 0 && len(text) > maxToolChars {
+		if blockType == "tool_result" && maxToolChars > 0 && len(text) > maxToolChars {
 			text = output.TruncateWithCount(text, maxToolChars)
 		}
 

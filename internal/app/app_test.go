@@ -485,8 +485,8 @@ func TestExportCmd_HintOnSkippedToolBlocks(t *testing.T) {
 	_, _ = buf.ReadFrom(r)
 	hints := buf.String()
 
-	if !strings.Contains(hints, "tool block(s) skipped") {
-		t.Errorf("expected hint about skipped tool blocks, got: %q", hints)
+	if !strings.Contains(hints, "tool result(s) skipped") {
+		t.Errorf("expected hint about skipped tool results, got: %q", hints)
 	}
 	if !strings.Contains(hints, "--include-tool-results") {
 		t.Errorf("expected hint to mention --include-tool-results flag, got: %q", hints)

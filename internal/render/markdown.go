@@ -163,15 +163,13 @@ func extractContent(obj map[string]any, includeToolResults bool, maxToolChars in
 			continue
 		}
 
-		isToolBlock := blockType == "tool_result" || blockType == "tool_use"
-
-		if isToolBlock && !includeToolResults {
+		if blockType == "tool_result" && !includeToolResults {
 			continue
 		}
 
 		var text string
 		if blockType == "tool_use" {
-			text = formatToolUse(block)
+			text = FormatToolUse(block)
 		} else if blockType == "tool_result" {
 			text = session.ExtractTextFromContent(item)
 			if maxToolChars > 0 && len(text) > maxToolChars {
@@ -188,7 +186,7 @@ func extractContent(obj map[string]any, includeToolResults bool, maxToolChars in
 	return strings.Join(parts, "\n\n")
 }
 
-func formatToolUse(block map[string]any) string {
+func FormatToolUse(block map[string]any) string {
 	name, _ := block["name"].(string)
 	input, _ := block["input"].(map[string]any)
 
@@ -204,5 +202,18 @@ func formatToolUse(block map[string]any) string {
 	if desc != "" {
 		return fmt.Sprintf("**%s**: %s", name, desc)
 	}
+
+	if len(input) > 0 {
+		var pairs []string
+		for k, v := range input {
+			s := fmt.Sprintf("%v", v)
+			if len(s) > 100 {
+				s = s[:100] + "..."
+			}
+			pairs = append(pairs, fmt.Sprintf("%s=%s", k, s))
+		}
+		return fmt.Sprintf("**%s**: %s", name, strings.Join(pairs, ", "))
+	}
+
 	return fmt.Sprintf("**%s**", name)
 }
