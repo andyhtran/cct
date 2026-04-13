@@ -8,17 +8,21 @@ import (
 
 	"github.com/andyhtran/cct/internal/output"
 	"github.com/andyhtran/cct/internal/plan"
+	"github.com/andyhtran/cct/internal/tui"
+	"github.com/charmbracelet/glamour"
 )
 
 type PlansCmd struct {
-	List   PlansListCmd   `cmd:"" default:"1" hidden:""`
+	List   PlansListCmd   `cmd:"" default:"1" help:"List recent plans"`
 	Search PlansSearchCmd `cmd:"" help:"Search plan content"`
 	Cp     PlansCpCmd     `cmd:"" help:"Copy a plan to current directory"`
+	View   PlansViewCmd   `cmd:"" help:"View a plan in the terminal"`
+	Export PlansExportCmd `cmd:"" help:"Export plan markdown to stdout"`
 }
 
 type PlansListCmd struct {
 	Project string `short:"p" help:"Filter by project name (matches title or name)"`
-	Limit   int    `short:"n" help:"Max results (0=no limit)" default:"0"`
+	Limit   int    `short:"n" help:"Max results (0=no limit)" default:"15"`
 	All     bool   `short:"a" help:"Show all results"`
 }
 
@@ -84,8 +88,10 @@ func (cmd *PlansListCmd) Run(globals *Globals) error {
 	}
 
 	if len(plans) > 0 {
+		name := plans[0].Name
 		fmt.Println()
-		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct plans cp %s", plans[0].Name)))
+		fmt.Printf("  %s\n", output.Cyan("cct plans export "+name))
+		fmt.Printf("  %s\n", output.Cyan("cct plans export --render "+name))
 	}
 	fmt.Println()
 	return nil
@@ -146,8 +152,10 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 	}
 
 	if len(matches) > 0 {
+		name := matches[0].Name
 		fmt.Println()
-		fmt.Printf("  %s\n", output.Cyan(fmt.Sprintf("cct plans cp %s", matches[0].Name)))
+		fmt.Printf("  %s\n", output.Cyan("cct plans export "+name))
+		fmt.Printf("  %s\n", output.Cyan("cct plans export --render "+name))
 	}
 	fmt.Println()
 	return nil
@@ -156,6 +164,64 @@ func (cmd *PlansSearchCmd) Run(globals *Globals) error {
 type PlansCpCmd struct {
 	Name string `arg:"" help:"Plan name or partial match"`
 	As   string `help:"Rename copied file" name:"as"`
+}
+
+type PlansViewCmd struct {
+	Name string `arg:"" help:"Plan name or partial match"`
+}
+
+func (cmd *PlansViewCmd) Run(globals *Globals) error {
+	p, err := plan.FindPlan(cmd.Name)
+	if err != nil {
+		return err
+	}
+
+	return tui.RunPlan(p)
+}
+
+type PlansExportCmd struct {
+	Name   string `arg:"" help:"Plan name or partial match"`
+	Render bool   `help:"Render with syntax highlighting (styled terminal output)"`
+	Output string `short:"o" help:"Output file (default: stdout)"`
+}
+
+func (cmd *PlansExportCmd) Run(globals *Globals) error {
+	p, err := plan.FindPlan(cmd.Name)
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(p.Path)
+	if err != nil {
+		return fmt.Errorf("cannot read plan: %w", err)
+	}
+
+	if cmd.Render {
+		renderer, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(0),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create renderer: %w", err)
+		}
+
+		rendered, err := renderer.Render(string(content))
+		if err != nil {
+			return err
+		}
+
+		if cmd.Output != "" {
+			return os.WriteFile(cmd.Output, []byte(rendered), 0o600)
+		}
+		fmt.Print(rendered)
+		return nil
+	}
+
+	if cmd.Output != "" {
+		return os.WriteFile(cmd.Output, content, 0o600)
+	}
+	_, err = os.Stdout.Write(content)
+	return err
 }
 
 func (cmd *PlansCpCmd) Run(globals *Globals) error {
