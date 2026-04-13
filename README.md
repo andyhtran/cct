@@ -56,8 +56,9 @@ cct view <id>           # Interactive TUI viewer
 Export to markdown:
 
 ```bash
-cct export <id>         # Truncated output
-cct export <id> --full  # Complete conversation
+cct export <id>           # Truncated output
+cct export <id> --full    # Complete conversation
+cct export <id> --render  # Syntax-highlighted terminal output
 ```
 
 > **Why not `claude --resume`?** There are known issues where resumed sessions don't load full context ([#15837](https://github.com/anthropics/claude-code/issues/15837), [#22107](https://github.com/anthropics/claude-code/issues/22107)). Use `cct view` or `cct export` when you need the complete conversation.
@@ -99,7 +100,7 @@ Run `cct --help` for additional commands.
 All commands support `--json` for scripting:
 
 ```bash
-cct search "bug" --json | jq -r '.[].session.short_id'
+cct search "bug" --json | jq -r '.[].short_id'
 ```
 
 ## How it works
