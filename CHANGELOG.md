@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-13
+
+### Added
+
+- `plans list`: now a first-class visible subcommand (default limit 15, `-p` filter, `--json`)
+- `plans view`: interactive TUI for viewing plan markdown with scrollable viewport and vim-style navigation
+- `plans export`: dump plan markdown to stdout, with `--render` for glamour-styled output and `-o` for file output
+- `export`: show `tool_use` blocks (tool name + summary) by default, without needing `--include-tool-results`
+
+### Changed
+
+- `plans list` / `plans search` hint lines now show `export` and `export --render` on separate lines for easy triple-click copying
+
 ## [1.1.0] - 2026-03-15
 
 ### Changed
