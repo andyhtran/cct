@@ -6,8 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-17
+
 ### Added
 
+- Custom title support: sessions renamed via Claude Code's `/rename` now surface their title in `list`, `info`, and `resume` output
+- `info <title>` / `resume <title>`: look up a session by its exact custom title (case-insensitive) before falling back to UUID prefix matching
+- `info --json`: includes a `custom_title` field when the session has been renamed
 - `changelog --refresh`: force-fetch the latest upstream CHANGELOG.md from the claude-code GitHub repo
 - `changelog --search <regex>`: case-insensitive grep across all entries, printing `version  matching-line` (or a `[{version, line}]` array with `--json`)
 - `changelog --since <version>` / `--until <version>`: filter to an inclusive version window
@@ -16,6 +21,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `changelog` now caches a mirror of the upstream CHANGELOG.md at `~/.cache/cct/changelog.md` (or `$XDG_CACHE_HOME/cct/`), auto-refreshed every 6h via a conditional GET with ETag. Previously it read `~/.claude/cache/changelog.md`, which Claude Code refreshes on its own schedule and could be weeks stale.
 - `changelog` help text now includes examples for the common lookup flows
+- Index schema bumped to v7 with a clean-rebuild upgrade model: any `user_version` mismatch drops all derived tables and repopulates from JSONL on the next `sync`, replacing the incremental migration path
 
 ## [1.2.1] - 2026-04-13
 
