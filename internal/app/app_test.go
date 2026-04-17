@@ -26,10 +26,10 @@ func setupFixtures(t *testing.T) string {
 	claudeDir := filepath.Join(home, ".claude")
 	projectsDir := filepath.Join(claudeDir, "projects")
 	plansDir := filepath.Join(claudeDir, "plans")
-	cacheDir := filepath.Join(claudeDir, "cache")
+	cctCacheDir := filepath.Join(home, ".cache", "cct")
 
 	projDir := filepath.Join(projectsDir, "-Users-test-myproject")
-	for _, d := range []string{projDir, plansDir, cacheDir} {
+	for _, d := range []string{projDir, plansDir, cctCacheDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -51,11 +51,22 @@ func setupFixtures(t *testing.T) string {
 	}
 
 	changelogContent := "# Changelog\n\n## 2.1.50\n\n- Added feature A\n- Fixed bug B\n\n## 2.1.49\n\n- Added feature C\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "changelog.md"), []byte(changelogContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cctCacheDir, "changelog.md"), []byte(changelogContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	return home
+}
+
+// writeChangelog overwrites the seeded cct cache copy of CHANGELOG.md for a
+// test that needs specific content. Must be called after setupFixtures (which
+// sets HOME/XDG_CACHE_HOME and creates the cache dir).
+func writeChangelog(t *testing.T, home, content string) {
+	t.Helper()
+	path := filepath.Join(home, ".cache", "cct", "changelog.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeLines(t *testing.T, path string, lines []string) {

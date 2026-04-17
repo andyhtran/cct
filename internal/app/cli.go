@@ -28,7 +28,7 @@ type CLI struct {
 	View        ViewCmd      `cmd:"" help:"View session in interactive TUI"`
 	Plans       PlansCmd     `cmd:"" help:"Browse and search plans"`
 	Stats       StatsCmd     `cmd:"" help:"Session statistics"`
-	Changelog   ChangelogCmd `cmd:"" aliases:"log" help:"Show Claude Code changelog"`
+	Changelog   ChangelogCmd `cmd:"" aliases:"log" help:"Show Claude Code changelog\n\nFetches the upstream CHANGELOG.md from the claude-code GitHub repo (cached locally for 6h). Use this to look up recent features, behavior changes, and disable flags.\n\nExamples:\n  cct changelog                              # Latest release only\n  cct changelog 2.1.111                      # A specific version\n  cct changelog --since 2.1.100 --all        # Every change since 2.1.100\n  cct changelog --search 'disable|opt.?out'  # Grep across all entries\n  cct changelog --refresh                    # Force re-fetch from GitHub"`
 	VersionInfo VersionCmd   `cmd:"" name:"version" help:"Show version information"`
 	Schema      SchemaCmd    `cmd:"" help:"Show CLI schema as JSON (for tooling)"`
 	Index       IndexCmd     `cmd:"" help:"Manage search index"`
