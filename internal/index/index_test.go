@@ -3,6 +3,7 @@
 package index
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ func setupTestIndex(t *testing.T) *Index {
 
 	sessionLines := []string{
 		`{"type":"user","message":{"role":"user","content":"fix the pre-commit hook and don't forget fmt.Println"},"cwd":"/Users/test/myproject","gitBranch":"main","sessionId":"aaaa1111-2222-3333-4444-555555555555","timestamp":"2026-02-01T08:00:00Z"}`,
+		`{"type":"custom-title","customTitle":"fix-precommit","sessionId":"aaaa1111-2222-3333-4444-555555555555"}`,
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll fix the pre-commit hook. It doesn't need fmt.Println here."}]},"timestamp":"2026-02-01T08:00:05Z"}`,
 		`{"type":"user","message":{"role":"user","content":"now add tests for the parser"},"timestamp":"2026-02-01T08:01:00Z"}`,
 		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Done, tests added for the parser."}]},"timestamp":"2026-02-01T08:01:05Z"}`,
@@ -586,8 +588,8 @@ func TestOpen_CorruptionRecovery(t *testing.T) {
 	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 6 {
-		t.Errorf("expected schema version 6 after recovery, got %d", version)
+	if version != 7 {
+		t.Errorf("expected schema version 7 after recovery, got %d", version)
 	}
 }
 
@@ -611,8 +613,8 @@ func TestEnsureSchema_FreshDB(t *testing.T) {
 	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 6 {
-		t.Errorf("expected schema version 6, got %d", version)
+	if version != 7 {
+		t.Errorf("expected schema version 7, got %d", version)
 	}
 
 	var count int
@@ -621,6 +623,176 @@ func TestEnsureSchema_FreshDB(t *testing.T) {
 	}
 	if count != 1 {
 		t.Error("sessions table not created")
+	}
+}
+
+func TestCustomTitle_RoundTrip(t *testing.T) {
+	idx := setupTestIndex(t)
+
+	var title sql.NullString
+	err := idx.db.QueryRow(
+		"SELECT custom_title FROM sessions WHERE id = ?",
+		"aaaa1111-2222-3333-4444-555555555555",
+	).Scan(&title)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !title.Valid || title.String != "fix-precommit" {
+		t.Errorf("custom_title = %v, want fix-precommit", title)
+	}
+
+	results, _, err := idx.Search(SearchOptions{Query: "parser", IncludeAgents: true, MaxResults: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search result")
+	}
+	if results[0].CustomTitle != "fix-precommit" {
+		t.Errorf("search result CustomTitle = %q, want fix-precommit", results[0].CustomTitle)
+	}
+}
+
+// The index is a derived cache: any stored user_version that doesn't match
+// the current schemaVersion should result in a clean rebuild — all tables
+// dropped, fresh schema applied, next Sync() backfills from JSONL. This
+// test seeds an old-shape DB with stale rows and asserts the rebuild wipes
+// them rather than trying to migrate them in place.
+func TestEnsureSchema_RebuildsFromOldVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	cacheDir := filepath.Join(home, ".cache", "cct")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a v6-shaped database that lacks custom_title and contains a
+	// stale session row + sync marker that the rebuild must discard.
+	dbPath := filepath.Join(cacheDir, "index.db")
+	seed, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSchema := `
+		CREATE TABLE sessions (
+			id TEXT PRIMARY KEY,
+			file_path TEXT NOT NULL UNIQUE,
+			project_dir TEXT NOT NULL,
+			project_name TEXT NOT NULL,
+			project_path TEXT NOT NULL,
+			is_agent INTEGER NOT NULL DEFAULT 0,
+			modified_at TEXT NOT NULL,
+			file_size INTEGER NOT NULL,
+			first_prompt TEXT,
+			created_at TEXT,
+			git_branch TEXT,
+			message_count INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE content_map (
+			rowid INTEGER PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			source TEXT,
+			byte_offset INTEGER NOT NULL,
+			byte_length INTEGER NOT NULL
+		);
+		CREATE VIRTUAL TABLE content_fts USING fts5(text, content='', contentless_delete=1, tokenize='porter unicode61');
+		CREATE TABLE index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+		INSERT INTO sessions(id, file_path, project_dir, project_name, project_path, is_agent, modified_at, file_size, message_count)
+			VALUES ('stale-id', '/stale/path.jsonl', '/stale', 'stale', '/stale', 0, '2026-01-01T00:00:00Z', 0, 0);
+		INSERT INTO index_meta(key, value) VALUES ('last_sync_time', '2026-01-01T00:00:00Z');
+		PRAGMA user_version = 6;
+	`
+	if _, err := seed.Exec(oldSchema); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := Open()
+	if err != nil {
+		t.Fatalf("Open on old DB: %v", err)
+	}
+	defer func() { _ = idx.Close() }()
+
+	var version int
+	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != schemaVersion {
+		t.Errorf("post-rebuild user_version = %d, want %d", version, schemaVersion)
+	}
+
+	// New column is present on the rebuilt table.
+	if _, err := idx.db.Exec("SELECT custom_title FROM sessions LIMIT 1"); err != nil {
+		t.Errorf("custom_title column missing after rebuild: %v", err)
+	}
+
+	// The stale row and stale sync marker must both be gone — the rebuild
+	// starts from a blank slate, and the next Sync() will backfill.
+	var sessionCount int
+	if err := idx.db.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&sessionCount); err != nil {
+		t.Fatal(err)
+	}
+	if sessionCount != 0 {
+		t.Errorf("sessions table still has %d rows after rebuild, want 0", sessionCount)
+	}
+	var metaCount int
+	if err := idx.db.QueryRow("SELECT COUNT(*) FROM index_meta").Scan(&metaCount); err != nil {
+		t.Fatal(err)
+	}
+	if metaCount != 0 {
+		t.Errorf("index_meta still has %d rows after rebuild, want 0", metaCount)
+	}
+}
+
+// Opening a DB that's already at the current schemaVersion must be a no-op:
+// no tables dropped, no rows lost. This pins the "same version = leave it
+// alone" side of the rebuild model, which is what protects users from
+// paying the rescan cost on every process start.
+func TestEnsureSchema_NoRebuildAtCurrentVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	cacheDir := filepath.Join(home, ".cache", "cct")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// First Open creates the schema at the current version.
+	idx, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := idx.db.Exec(
+		"INSERT INTO index_meta(key, value) VALUES ('last_sync_time', '2026-01-01T00:00:00Z')",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopen: since user_version already matches, ensureSchema should
+	// skip the rebuild and preserve the sync marker.
+	idx2, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = idx2.Close() }()
+
+	var lastSync string
+	if err := idx2.db.QueryRow(
+		"SELECT value FROM index_meta WHERE key = 'last_sync_time'",
+	).Scan(&lastSync); err != nil {
+		t.Fatalf("last_sync_time lost on reopen: %v", err)
+	}
+	if lastSync != "2026-01-01T00:00:00Z" {
+		t.Errorf("last_sync_time = %q, want preserved value", lastSync)
 	}
 }
 

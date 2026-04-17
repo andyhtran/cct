@@ -212,6 +212,84 @@ func TestExtractMetadata(t *testing.T) {
 	}
 }
 
+func TestExtractMetadata_CustomTitle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cust-title.jsonl")
+
+	// custom-title records are written after the user message (Claude
+	// sets the title mid-session via /rename) and may be rewritten per
+	// turn — the last value must win.
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"draft plan"},"cwd":"/p","gitBranch":"main","sessionId":"sid","timestamp":"2026-03-01T08:00:00Z"}`,
+		`{"type":"custom-title","customTitle":"old-title","sessionId":"sid"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"timestamp":"2026-03-01T08:00:05Z"}`,
+		`{"type":"custom-title","customTitle":"latest-title","sessionId":"sid"}`,
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	meta := ExtractMetadata(path)
+	if meta == nil {
+		t.Fatal("ExtractMetadata returned nil")
+	}
+	if meta.CustomTitle != "latest-title" {
+		t.Errorf("metadata CustomTitle = %q, want %q", meta.CustomTitle, "latest-title")
+	}
+	if meta.FirstPrompt != "draft plan" {
+		t.Errorf("metadata FirstPrompt = %q, want %q", meta.FirstPrompt, "draft plan")
+	}
+
+	full := ParseFullSession(path)
+	if full == nil {
+		t.Fatal("ParseFullSession returned nil")
+	}
+	if full.CustomTitle != "latest-title" {
+		t.Errorf("full CustomTitle = %q, want %q", full.CustomTitle, "latest-title")
+	}
+}
+
+func TestExtractMetadata_NoCustomTitle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "no-title.jsonl")
+
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"hi"},"cwd":"/p","gitBranch":"main","sessionId":"sid","timestamp":"2026-03-01T08:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},"timestamp":"2026-03-01T08:00:05Z"}`,
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := ExtractMetadata(path)
+	if s == nil {
+		t.Fatal("expected non-nil session")
+	}
+	if s.CustomTitle != "" {
+		t.Errorf("expected empty CustomTitle for session without /rename, got %q", s.CustomTitle)
+	}
+}
+
 func TestParseFullSession(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test-full-id.jsonl")

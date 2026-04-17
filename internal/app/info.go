@@ -32,6 +32,9 @@ func (cmd *InfoCmd) Run(globals *Globals) error {
 
 	fmt.Println()
 	fmt.Printf("  %s  %s\n", output.Dim("Session:"), match.ID)
+	if match.CustomTitle != "" {
+		fmt.Printf("  %s    %s\n", output.Dim("Title:"), output.Bold(match.CustomTitle))
+	}
 	if match.ProjectPath != "" {
 		fmt.Printf("  %s  %s\n", output.Dim("Project:"), output.Bold(match.ProjectPath))
 	}

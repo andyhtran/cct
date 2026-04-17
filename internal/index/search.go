@@ -190,6 +190,7 @@ func (idx *Index) ftsSearch(opts SearchOptions) ([]SearchResult, int, error) {
 				s.id, s.file_path, s.project_name, s.project_path,
 				s.is_agent, s.modified_at,
 				s.first_prompt, s.created_at, s.git_branch, s.message_count,
+				s.custom_title,
 				m.match_count
 			FROM sessions s
 			JOIN matches m ON s.id = m.session_id
@@ -233,6 +234,7 @@ func (idx *Index) ftsSearch(opts SearchOptions) ([]SearchResult, int, error) {
 				s.id, s.file_path, s.project_name, s.project_path,
 				s.is_agent, s.modified_at,
 				s.first_prompt, s.created_at, s.git_branch, s.message_count,
+				s.custom_title,
 				m.match_count
 			FROM sessions s
 			JOIN matches m ON s.id = m.session_id
@@ -307,11 +309,11 @@ func (idx *Index) scanSessionRows(query string, args []any) ([]string, map[strin
 
 	for rows.Next() {
 		var id, filePath, projectName, projectPath, modifiedStr string
-		var firstPrompt, createdAtStr, gitBranch sql.NullString
+		var firstPrompt, createdAtStr, gitBranch, customTitle sql.NullString
 		var isAgent, messageCount, matchCount int
 
 		if err := rows.Scan(&id, &filePath, &projectName, &projectPath, &isAgent, &modifiedStr,
-			&firstPrompt, &createdAtStr, &gitBranch, &messageCount, &matchCount); err != nil {
+			&firstPrompt, &createdAtStr, &gitBranch, &messageCount, &customTitle, &matchCount); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
@@ -331,6 +333,7 @@ func (idx *Index) scanSessionRows(query string, args []any) ([]string, map[strin
 			FilePath:     filePath,
 			Modified:     modified,
 			FirstPrompt:  firstPrompt.String,
+			CustomTitle:  customTitle.String,
 			Created:      created,
 			GitBranch:    gitBranch.String,
 			MessageCount: messageCount,

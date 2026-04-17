@@ -368,6 +368,10 @@ func parseSession(path string, full bool) *Session {
 
 	scanner := NewJSONLScanner(f)
 
+	// Metadata-only parse used to early-return on the first complete user
+	// message. Claude Code writes "custom-title" records after user messages
+	// (the title is set mid-session by /rename), so we scan to EOF to capture
+	// the latest title. Parallelised by parallelMap in scan.go.
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		lineType := FastExtractType(line)
@@ -381,10 +385,7 @@ func parseSession(path string, full bool) *Session {
 			if json.Unmarshal(line, &obj) != nil {
 				continue
 			}
-			complete := ExtractUserMetadata(s, obj)
-			if !full && complete {
-				return s
-			}
+			ExtractUserMetadata(s, obj)
 
 		case "assistant":
 			if full {
@@ -392,6 +393,16 @@ func parseSession(path string, full bool) *Session {
 			}
 			if ts := FastExtractTimestamp(line); !ts.IsZero() && s.Created.IsZero() {
 				s.Created = ts
+			}
+
+		case "custom-title":
+			// Claude rewrites this record every turn; latest value wins.
+			var obj map[string]any
+			if json.Unmarshal(line, &obj) != nil {
+				continue
+			}
+			if ct, _ := obj["customTitle"].(string); ct != "" {
+				s.CustomTitle = ct
 			}
 
 		case "file-history-snapshot":

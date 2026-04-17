@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `changelog --refresh`: force-fetch the latest upstream CHANGELOG.md from the claude-code GitHub repo
+- `changelog --search <regex>`: case-insensitive grep across all entries, printing `version  matching-line` (or a `[{version, line}]` array with `--json`)
+- `changelog --since <version>` / `--until <version>`: filter to an inclusive version window
+
+### Changed
+
+- `changelog` now caches a mirror of the upstream CHANGELOG.md at `~/.cache/cct/changelog.md` (or `$XDG_CACHE_HOME/cct/`), auto-refreshed every 6h via a conditional GET with ETag. Previously it read `~/.claude/cache/changelog.md`, which Claude Code refreshes on its own schedule and could be weeks stale.
+- `changelog` help text now includes examples for the common lookup flows
+
 ## [1.2.1] - 2026-04-13
 
 ### Added

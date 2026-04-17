@@ -24,3 +24,11 @@ func CacheDir() string {
 func IndexPath() string {
 	return filepath.Join(CacheDir(), "index.db")
 }
+
+func ChangelogCachePath() string {
+	return filepath.Join(CacheDir(), "changelog.md")
+}
+
+func ChangelogMetaPath() string {
+	return filepath.Join(CacheDir(), "changelog.meta.json")
+}

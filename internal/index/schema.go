@@ -1,6 +1,17 @@
 package index
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
+
+// schemaVersion is bumped whenever the table layout or the JSONL parsing
+// logic changes in a way that invalidates existing rows. The index is a
+// pure derived cache of ~/.claude/projects/**/*.jsonl, so any version
+// mismatch is resolved by dropping all tables and letting the next Sync()
+// repopulate from disk. Adding a new field becomes: edit schemaSQL, bump
+// this constant.
+const schemaVersion = 7
 
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -15,7 +26,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 	first_prompt TEXT,
 	created_at TEXT,
 	git_branch TEXT,
-	message_count INTEGER NOT NULL DEFAULT 0
+	message_count INTEGER NOT NULL DEFAULT 0,
+	custom_title TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_dir);
@@ -45,115 +57,48 @@ CREATE TABLE IF NOT EXISTS index_meta (
 );
 `
 
+// derivedTables lists every table we own. All of them are reconstructable
+// from JSONL on disk, so ensureSchema drops them wholesale on any version
+// mismatch. content_raw is a legacy pre-v5 table kept in the drop list so
+// old DBs upgrading to the rebuild model don't leave orphaned tables behind.
+var derivedTables = []string{
+	"sessions",
+	"content_map",
+	"content_fts",
+	"content_raw",
+	"index_meta",
+}
+
 func (idx *Index) ensureSchema() error {
 	var version int
-	err := idx.db.QueryRow("PRAGMA user_version").Scan(&version)
-	if err != nil {
+	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-
-	if version == 0 {
-		if _, err := idx.db.Exec(schemaSQL); err != nil {
-			return err
-		}
-		if _, err := idx.db.Exec("PRAGMA user_version = 6"); err != nil {
-			return err
-		}
+	if version == schemaVersion {
 		return nil
 	}
 
-	if version < 5 {
-		tx, err := idx.db.Begin()
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-
-		for _, stmt := range []string{
-			"DROP TABLE IF EXISTS content_fts",
-			"DROP TABLE IF EXISTS content_raw",
-			"DROP TABLE IF EXISTS content_map",
-			"DELETE FROM sessions",
-		} {
-			if _, err := tx.Exec(stmt); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(`
-			CREATE TABLE content_map (
-				rowid INTEGER PRIMARY KEY,
-				session_id TEXT NOT NULL,
-				role TEXT NOT NULL,
-				source TEXT,
-				byte_offset INTEGER NOT NULL,
-				byte_length INTEGER NOT NULL
-			)
-		`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("CREATE INDEX idx_content_map_session ON content_map(session_id)"); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`
-			CREATE TABLE IF NOT EXISTS index_meta (
-				key TEXT PRIMARY KEY,
-				value TEXT NOT NULL
-			)
-		`); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("DELETE FROM index_meta WHERE key = 'last_sync_time'"); err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-
-		if _, err := idx.db.Exec(`
-			CREATE VIRTUAL TABLE content_fts USING fts5(
-				text,
-				content='',
-				contentless_delete=1,
-				tokenize='porter unicode61'
-			)
-		`); err != nil {
-			return err
-		}
-		if _, err := idx.db.Exec("VACUUM"); err != nil {
-			return err
-		}
-		if _, err := idx.db.Exec("PRAGMA user_version = 5"); err != nil {
-			return err
-		}
-		version = 5
+	tx, err := idx.db.Begin()
+	if err != nil {
+		return err
 	}
+	defer func() { _ = tx.Rollback() }()
 
-	if version < 6 {
-		tx, err := idx.db.Begin()
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-
-		for _, col := range []string{
-			"ALTER TABLE sessions ADD COLUMN first_prompt TEXT",
-			"ALTER TABLE sessions ADD COLUMN created_at TEXT",
-			"ALTER TABLE sessions ADD COLUMN git_branch TEXT",
-			"ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0",
-		} {
-			_, _ = tx.Exec(col)
-		}
-		if _, err := tx.Exec("DELETE FROM index_meta WHERE key = 'last_sync_time'"); err != nil {
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-		if _, err := idx.db.Exec("PRAGMA user_version = 6"); err != nil {
+	for _, name := range derivedTables {
+		if _, err := tx.Exec("DROP TABLE IF EXISTS " + name); err != nil {
 			return err
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 
+	if _, err := idx.db.Exec(schemaSQL); err != nil {
+		return err
+	}
+	if _, err := idx.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+		return err
+	}
 	return nil
 }
 

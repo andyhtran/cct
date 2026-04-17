@@ -76,6 +76,7 @@ Add to your `CLAUDE.md` to let Claude search your session history:
 ```markdown
 Use `cct search <query>` to find relevant past sessions.
 Use `cct export <id> --full` to read full conversation context.
+Use `cct changelog --search <regex>` to look up Claude Code features, behavior changes, or disable flags.
 ```
 
 Then prompt naturally:
@@ -85,6 +86,20 @@ use cct to find sessions where we debugged the auth issue
 ```
 
 This turns your session history into a searchable knowledge base that Claude can query.
+
+## Looking up Claude Code features
+
+`cct changelog` mirrors the upstream [CHANGELOG.md](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) locally (cached for 6h) and makes it searchable:
+
+```bash
+cct changelog                              # Latest release
+cct changelog --search "disable|opt.?out"  # Grep for ways to turn things off
+cct changelog --search "plan.*name"        # Find mentions of a specific feature
+cct changelog --since 2.1.100 --all        # Every change in a version window
+cct changelog --refresh                    # Force re-fetch from GitHub
+```
+
+Useful when you want to answer "did Claude Code add a flag for X?" or "what changed between versions?" without leaving the terminal.
 
 ## Other commands
 

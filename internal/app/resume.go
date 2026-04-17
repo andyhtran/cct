@@ -58,6 +58,9 @@ func (cmd *ResumeCmd) Run(globals *Globals) error {
 	// Pre-launch context (visible in scrollback after claude exits).
 	fmt.Println()
 	fmt.Printf("  Resuming session %s\n", output.Dim(match.ShortID))
+	if match.CustomTitle != "" {
+		fmt.Printf("  Title:    %s\n", output.Bold(match.CustomTitle))
+	}
 	if match.ProjectName != "" {
 		fmt.Printf("  Project:  %s", output.Bold(match.ProjectName))
 		if match.GitBranch != "" {

@@ -26,10 +26,10 @@ func setupFixtures(t *testing.T) string {
 	claudeDir := filepath.Join(home, ".claude")
 	projectsDir := filepath.Join(claudeDir, "projects")
 	plansDir := filepath.Join(claudeDir, "plans")
-	cacheDir := filepath.Join(claudeDir, "cache")
+	cctCacheDir := filepath.Join(home, ".cache", "cct")
 
 	projDir := filepath.Join(projectsDir, "-Users-test-myproject")
-	for _, d := range []string{projDir, plansDir, cacheDir} {
+	for _, d := range []string{projDir, plansDir, cctCacheDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -51,11 +51,22 @@ func setupFixtures(t *testing.T) string {
 	}
 
 	changelogContent := "# Changelog\n\n## 2.1.50\n\n- Added feature A\n- Fixed bug B\n\n## 2.1.49\n\n- Added feature C\n"
-	if err := os.WriteFile(filepath.Join(cacheDir, "changelog.md"), []byte(changelogContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cctCacheDir, "changelog.md"), []byte(changelogContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	return home
+}
+
+// writeChangelog overwrites the seeded cct cache copy of CHANGELOG.md for a
+// test that needs specific content. Must be called after setupFixtures (which
+// sets HOME/XDG_CACHE_HOME and creates the cache dir).
+func writeChangelog(t *testing.T, home, content string) {
+	t.Helper()
+	path := filepath.Join(home, ".cache", "cct", "changelog.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeLines(t *testing.T, path string, lines []string) {
@@ -199,6 +210,39 @@ func TestInfoCmd_JSON(t *testing.T) {
 	mc, ok := info["message_count"].(float64)
 	if !ok || mc != 4 {
 		t.Errorf("message_count = %v, want 4", info["message_count"])
+	}
+}
+
+func TestInfoCmd_JSON_CustomTitle(t *testing.T) {
+	home := setupFixtures(t)
+
+	// Seed a second session that carries a /rename custom-title record.
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	titledID := "feed0000-1111-2222-3333-444444444444"
+	writeLines(t, filepath.Join(projDir, titledID+".jsonl"), []string{
+		`{"type":"user","message":{"role":"user","content":"name me"},"cwd":"/Users/test/myproject","gitBranch":"main","sessionId":"` + titledID + `","timestamp":"2026-03-15T08:00:00Z"}`,
+		`{"type":"custom-title","customTitle":"fix-keyboard-dictation-return","sessionId":"` + titledID + `"}`,
+	})
+
+	globals := &Globals{JSON: true}
+
+	// Lookup by custom title should resolve to the UUID and emit the field.
+	cmd := &InfoCmd{ID: "fix-keyboard-dictation-return"}
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	var info map[string]any
+	if err := json.Unmarshal([]byte(out), &info); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if info["id"] != titledID {
+		t.Errorf("id = %v, want %s", info["id"], titledID)
+	}
+	if info["custom_title"] != "fix-keyboard-dictation-return" {
+		t.Errorf("custom_title = %v, want fix-keyboard-dictation-return", info["custom_title"])
 	}
 }
 

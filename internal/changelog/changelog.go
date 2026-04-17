@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/andyhtran/cct/internal/paths"
@@ -16,11 +15,23 @@ type VersionEntry struct {
 	Content string `json:"content"`
 }
 
+// ChangelogPath returns the cct-owned cached copy of the upstream CHANGELOG.md.
+// We deliberately do not read from ~/.claude/cache/ — that's Claude Code's
+// territory, and its copy is refreshed on its own schedule so can run weeks
+// behind the upstream repo.
 func ChangelogPath() string {
-	return filepath.Join(paths.ClaudeDir(), "cache", "changelog.md")
+	return paths.ChangelogCachePath()
 }
 
+// ParseChangelog reads the cached changelog and returns parsed entries.
+// If no cache exists yet, it performs a first-time fetch from GitHub.
 func ParseChangelog() ([]VersionEntry, error) {
+	if _, err := os.Stat(ChangelogPath()); os.IsNotExist(err) {
+		if _, fetchErr := Fetch(); fetchErr != nil {
+			return nil, fmt.Errorf("no cached changelog and fetch failed: %w", fetchErr)
+		}
+	}
+
 	data, err := os.ReadFile(ChangelogPath())
 	if err != nil {
 		return nil, fmt.Errorf("cannot read changelog: %w", err)
