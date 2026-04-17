@@ -23,6 +23,7 @@ type Session struct {
 	ProjectName  string    `json:"project_name"`
 	GitBranch    string    `json:"git_branch"`
 	FirstPrompt  string    `json:"first_prompt"`
+	CustomTitle  string    `json:"custom_title,omitempty"`
 	FilePath     string    `json:"-"`
 	Created      time.Time `json:"created"`
 	Modified     time.Time `json:"modified"`
@@ -61,9 +62,42 @@ func ShortID(id string) string {
 
 func FindByPrefix(prefix string) (*Session, error) {
 	sessions := ScanAll("", false, true)
+
+	// Exact match on full ID or 8-char short ID wins outright.
+	for _, s := range sessions {
+		if s.ID == prefix || s.ShortID == prefix {
+			return s, nil
+		}
+	}
+
+	// Next: exact custom-title match (case-insensitive). Titles set via
+	// Claude Code's /rename are the user-facing identifier, so an exact
+	// hit takes precedence over any UUID-prefix collisions below. Skip
+	// agent sessions — they don't carry custom titles.
+	var titleMatches []*Session
+	for _, s := range sessions {
+		if s.IsAgent || s.CustomTitle == "" {
+			continue
+		}
+		if strings.EqualFold(s.CustomTitle, prefix) {
+			titleMatches = append(titleMatches, s)
+		}
+	}
+	if len(titleMatches) == 1 {
+		return titleMatches[0], nil
+	}
+	if len(titleMatches) > 1 {
+		var ids []string
+		for _, s := range titleMatches {
+			ids = append(ids, fmt.Sprintf("  %s  %s  (%s)", s.ShortID, s.ProjectName, s.CustomTitle))
+		}
+		return nil, fmt.Errorf("multiple sessions share title %q:\n%s: %w", prefix, strings.Join(ids, "\n"), ErrMultipleMatches)
+	}
+
+	// Fall back to UUID prefix match.
 	var matches []*Session
 	for _, s := range sessions {
-		if s.ID == prefix || strings.HasPrefix(s.ID, prefix) || s.ShortID == prefix {
+		if strings.HasPrefix(s.ID, prefix) {
 			matches = append(matches, s)
 		}
 	}

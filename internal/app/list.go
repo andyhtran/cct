@@ -85,6 +85,11 @@ func printSessionTable(sessions []*session.Session, compact bool) {
 		if prompt == "" {
 			prompt = "[no prompt]"
 		}
+		// Surface the /rename title in-column so users can match the name
+		// Claude Code shows them; keeps the 5-column layout stable.
+		if s.CustomTitle != "" {
+			prompt = "[" + s.CustomTitle + "] " + prompt
+		}
 		tbl.Row(
 			[]string{
 				s.ShortID,

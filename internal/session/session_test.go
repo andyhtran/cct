@@ -109,6 +109,75 @@ func TestFindByPrefix_MultipleMatches(t *testing.T) {
 	}
 }
 
+func TestFindByPrefix_CustomTitle(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-proj")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Session with a custom title (set via /rename).
+	titleLines := []string{
+		`{"type":"user","message":{"role":"user","content":"fix thing"},"cwd":"/test/proj","sessionId":"cafe1111-2222-3333-4444-555555555555","timestamp":"2026-03-01T08:00:00Z"}`,
+		`{"type":"custom-title","customTitle":"fix-keyboard-dictation-return","sessionId":"cafe1111-2222-3333-4444-555555555555"}`,
+	}
+	// A decoy session whose UUID prefix would otherwise collide if the
+	// user happened to query "cafe" — here we test title lookup doesn't
+	// conflict with ID prefix lookup.
+	plainLines := []string{
+		`{"type":"user","message":{"role":"user","content":"other"},"cwd":"/test/proj","sessionId":"deaf1111-2222-3333-4444-555555555555","timestamp":"2026-03-02T08:00:00Z"}`,
+	}
+
+	for _, s := range []struct {
+		id    string
+		lines []string
+	}{
+		{"cafe1111-2222-3333-4444-555555555555", titleLines},
+		{"deaf1111-2222-3333-4444-555555555555", plainLines},
+	} {
+		path := filepath.Join(projDir, s.id+".jsonl")
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range s.lines {
+			if _, err := fmt.Fprintln(f, line); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_ = f.Close()
+	}
+
+	t.Run("exact title match", func(t *testing.T) {
+		s, err := FindByPrefix("fix-keyboard-dictation-return")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.ID != "cafe1111-2222-3333-4444-555555555555" {
+			t.Errorf("ID = %q, want cafe1111-...", s.ID)
+		}
+	})
+
+	t.Run("title match is case-insensitive", func(t *testing.T) {
+		s, err := FindByPrefix("FIX-Keyboard-Dictation-RETURN")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.ID != "cafe1111-2222-3333-4444-555555555555" {
+			t.Errorf("ID = %q, want cafe1111-...", s.ID)
+		}
+	})
+
+	t.Run("unknown title still errors", func(t *testing.T) {
+		_, err := FindByPrefix("not-a-real-title")
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("err = %v, want ErrNotFound", err)
+		}
+	})
+}
+
 func TestFindByPrefixFull(t *testing.T) {
 	setupSessionFixtures(t)
 

@@ -213,6 +213,39 @@ func TestInfoCmd_JSON(t *testing.T) {
 	}
 }
 
+func TestInfoCmd_JSON_CustomTitle(t *testing.T) {
+	home := setupFixtures(t)
+
+	// Seed a second session that carries a /rename custom-title record.
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	titledID := "feed0000-1111-2222-3333-444444444444"
+	writeLines(t, filepath.Join(projDir, titledID+".jsonl"), []string{
+		`{"type":"user","message":{"role":"user","content":"name me"},"cwd":"/Users/test/myproject","gitBranch":"main","sessionId":"` + titledID + `","timestamp":"2026-03-15T08:00:00Z"}`,
+		`{"type":"custom-title","customTitle":"fix-keyboard-dictation-return","sessionId":"` + titledID + `"}`,
+	})
+
+	globals := &Globals{JSON: true}
+
+	// Lookup by custom title should resolve to the UUID and emit the field.
+	cmd := &InfoCmd{ID: "fix-keyboard-dictation-return"}
+	out := captureStdout(t, func() {
+		if err := cmd.Run(globals); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	var info map[string]any
+	if err := json.Unmarshal([]byte(out), &info); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if info["id"] != titledID {
+		t.Errorf("id = %v, want %s", info["id"], titledID)
+	}
+	if info["custom_title"] != "fix-keyboard-dictation-return" {
+		t.Errorf("custom_title = %v, want fix-keyboard-dictation-return", info["custom_title"])
+	}
+}
+
 func TestStatsCmd_JSON(t *testing.T) {
 	setupFixtures(t)
 

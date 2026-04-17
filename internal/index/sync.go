@@ -309,11 +309,11 @@ func (idx *Index) insertSession(tx *sql.Tx, s *indexedSession) error {
 
 	_, err := tx.Exec(`
 		INSERT OR REPLACE INTO sessions (id, file_path, project_dir, project_name, project_path, is_agent, modified_at, file_size,
-			first_prompt, created_at, git_branch, message_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			first_prompt, created_at, git_branch, message_count, custom_title)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, sess.ID, sess.FilePath, projectDir, sess.ProjectName, sess.ProjectPath, boolToInt(sess.IsAgent),
 		sess.Modified.Format(time.RFC3339), s.fileSize,
-		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount)
+		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount, sess.CustomTitle)
 	if err != nil {
 		return err
 	}
@@ -443,6 +443,19 @@ func indexSession(path string) (*indexedSession, error) {
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		lineType := session.FastExtractType(line)
+
+		// custom-title records carry the /rename title and are rewritten
+		// each turn — latest wins. They don't contribute to FTS content.
+		if lineType == "custom-title" {
+			var obj map[string]any
+			if json.Unmarshal(line, &obj) != nil {
+				continue
+			}
+			if ct, _ := obj["customTitle"].(string); ct != "" {
+				s.CustomTitle = ct
+			}
+			continue
+		}
 
 		if lineType != "user" && lineType != "assistant" {
 			continue
