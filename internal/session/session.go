@@ -28,6 +28,23 @@ type Session struct {
 	Created      time.Time `json:"created"`
 	Modified     time.Time `json:"modified"`
 	MessageCount int       `json:"message_count"`
+
+	// Token usage (populated only by ParseFullSession, not ExtractMetadata).
+	// Model is the last non-synthetic assistant model seen. ContextTokens is
+	// the input-side token count (input + cache_creation + cache_read) on the
+	// last real assistant turn — this mirrors what Claude Code's /context
+	// displays live. PeakContextTokens is the max across all turns; useful to
+	// see whether the session ever hit auto-compact.
+	Model             string `json:"model,omitempty"`
+	ContextTokens     int    `json:"context_tokens,omitempty"`
+	PeakContextTokens int    `json:"peak_context_tokens,omitempty"`
+	TotalOutputTokens int    `json:"total_output_tokens,omitempty"`
+}
+
+// ContextWindow returns the effective max context window for a model. Defaults
+// to 200_000 for the Claude 4.x family and any unrecognised model.
+func ContextWindow(model string) int {
+	return 200_000
 }
 
 type Match struct {

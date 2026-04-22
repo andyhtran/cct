@@ -290,6 +290,85 @@ func TestExtractMetadata_NoCustomTitle(t *testing.T) {
 	}
 }
 
+func TestParseFullSession_Usage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage-sess.jsonl")
+
+	// Three assistant turns: peak context is 40_000 (turn 2), then a small
+	// compaction drops to 15_000 (turn 3). A synthetic turn at the end must
+	// be ignored so it doesn't clobber Model/ContextTokens.
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"hi"},"cwd":"/p","sessionId":"s","timestamp":"2026-03-01T00:00:00Z"}`,
+		`{"type":"assistant","timestamp":"2026-03-01T00:00:01Z","message":{"role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"a"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":1000,"cache_read_input_tokens":9000,"output_tokens":50}}}`,
+		`{"type":"assistant","timestamp":"2026-03-01T00:00:02Z","message":{"role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"b"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":2000,"cache_read_input_tokens":37995,"output_tokens":100}}}`,
+		`{"type":"assistant","timestamp":"2026-03-01T00:00:03Z","message":{"role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"c"}],"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":15000,"output_tokens":25}}}`,
+		`{"type":"assistant","timestamp":"2026-03-01T00:00:04Z","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"local"}],"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}`,
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := ParseFullSession(path)
+	if s == nil {
+		t.Fatal("expected non-nil session")
+	}
+
+	if s.Model != "claude-opus-4-7" {
+		t.Errorf("Model = %q, want claude-opus-4-7 (synthetic turn must not overwrite)", s.Model)
+	}
+	if s.ContextTokens != 15_000 {
+		t.Errorf("ContextTokens = %d, want 15000 (last real turn)", s.ContextTokens)
+	}
+	if s.PeakContextTokens != 40_000 {
+		t.Errorf("PeakContextTokens = %d, want 40000", s.PeakContextTokens)
+	}
+	if s.TotalOutputTokens != 175 {
+		t.Errorf("TotalOutputTokens = %d, want 175 (50+100+25)", s.TotalOutputTokens)
+	}
+}
+
+func TestExtractMetadata_NoUsage(t *testing.T) {
+	// Metadata-only scan (used by list/search) must NOT populate usage fields,
+	// since it skips the JSON unmarshal on assistant lines for speed.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "meta-only.jsonl")
+
+	lines := []string{
+		`{"type":"user","message":{"role":"user","content":"hi"},"cwd":"/p","sessionId":"s","timestamp":"2026-03-01T00:00:00Z"}`,
+		`{"type":"assistant","timestamp":"2026-03-01T00:00:01Z","message":{"role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":200,"output_tokens":5}}}`,
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		if _, err := f.WriteString(line + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := ExtractMetadata(path)
+	if s == nil {
+		t.Fatal("expected non-nil session")
+	}
+	if s.ContextTokens != 0 || s.Model != "" {
+		t.Errorf("ExtractMetadata must skip usage; got Model=%q ContextTokens=%d", s.Model, s.ContextTokens)
+	}
+}
+
 func TestParseFullSession(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test-full-id.jsonl")
