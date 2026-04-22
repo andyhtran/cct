@@ -232,6 +232,38 @@ func isBase64Like(s string) bool {
 	return len(s) > 1000 && !strings.Contains(s[:1000], " ")
 }
 
+// extractAssistantUsage pulls .message.usage and .message.model out of a raw
+// assistant JSONL line and updates the session's rolling context totals.
+// Synthetic turns (model "<synthetic>") never hit the API, carry zero usage,
+// and are skipped so they don't blank out a real last-turn value.
+func extractAssistantUsage(s *Session, line []byte) {
+	var obj struct {
+		Message struct {
+			Model string `json:"model"`
+			Usage struct {
+				InputTokens              int `json:"input_tokens"`
+				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				OutputTokens             int `json:"output_tokens"`
+			} `json:"usage"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &obj); err != nil {
+		return
+	}
+	if obj.Message.Model == "" || obj.Message.Model == "<synthetic>" {
+		return
+	}
+	u := obj.Message.Usage
+	ctx := u.InputTokens + u.CacheCreationInputTokens + u.CacheReadInputTokens
+	s.Model = obj.Message.Model
+	s.ContextTokens = ctx
+	s.TotalOutputTokens += u.OutputTokens
+	if ctx > s.PeakContextTokens {
+		s.PeakContextTokens = ctx
+	}
+}
+
 func ParseTimestamp(obj map[string]any) time.Time {
 	ts, ok := obj["timestamp"].(string)
 	if !ok {
@@ -393,6 +425,9 @@ func parseSession(path string, full bool) *Session {
 			}
 			if ts := FastExtractTimestamp(line); !ts.IsZero() && s.Created.IsZero() {
 				s.Created = ts
+			}
+			if full {
+				extractAssistantUsage(s, line)
 			}
 
 		case "custom-title":
