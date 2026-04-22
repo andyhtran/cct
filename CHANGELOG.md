@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-22
+
+### Added
+
+- `info <id>`: shows token usage for the session — current context size, percent of the 200k window, model, peak context (when a compaction has reduced it), and lifetime output tokens. Mirrors what Claude Code's `/context` displays, so you can spot sessions near auto-compact without resuming them.
+- `info --json`: includes `model`, `context_tokens`, `peak_context_tokens`, and `total_output_tokens` fields
+
 ## [1.3.0] - 2026-04-17
 
 ### Added
