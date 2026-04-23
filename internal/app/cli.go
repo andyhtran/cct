@@ -32,6 +32,7 @@ type CLI struct {
 	VersionInfo VersionCmd   `cmd:"" name:"version" help:"Show version information"`
 	Schema      SchemaCmd    `cmd:"" help:"Show CLI schema as JSON (for tooling)"`
 	Index       IndexCmd     `cmd:"" help:"Manage search index"`
+	Backup      BackupCmd    `cmd:"" help:"Back up session JSONL files (guards against upstream cleanup bugs).\n\nRun 'cct backup sweep' periodically (cron, shell hook, or manually).\ncct never modifies ~/.claude/settings.json."`
 }
 
 type Globals struct {

@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/andyhtran/cct/internal/backup"
 	"github.com/andyhtran/cct/internal/index"
 	"github.com/andyhtran/cct/internal/output"
+	"github.com/andyhtran/cct/internal/paths"
 )
 
 type IndexCmd struct {
@@ -43,7 +46,33 @@ func (cmd *IndexSyncCmd) Run(globals *Globals) error {
 	}
 
 	fmt.Println(formatSyncResult(result))
+	printBackupSyncNudge()
 	return nil
+}
+
+// printBackupSyncNudge appends one of three best-effort lines to `cct index
+// sync` output: "feature exists, you haven't used it" when the manifest is
+// missing or empty, "last sweep is stale" when the newest LastVerifiedAt is
+// older than StaleSweepThreshold, otherwise silent. Manifest read errors are
+// swallowed — the nudge is never allowed to block or fail a sync.
+func printBackupSyncNudge() {
+	m, err := backup.LoadManifest(paths.BackupManifestPath())
+	if err != nil {
+		return
+	}
+	if len(m.Entries) == 0 {
+		fmt.Println("cct can preserve session history against upstream cleanup bugs")
+		fmt.Println("(issues #41458, #23710, #20992). Run `cct backup sweep` to enable.")
+		return
+	}
+	last := m.LastSweep()
+	if last.IsZero() {
+		return
+	}
+	age := time.Since(last)
+	if age > backup.StaleSweepThreshold {
+		fmt.Printf("Last backup was %d days ago. Run `cct backup sweep` to refresh.\n", int(age.Hours()/24))
+	}
 }
 
 type IndexRebuildCmd struct {
@@ -99,7 +128,7 @@ func (cmd *IndexStatusCmd) Run(globals *Globals) error {
 	fmt.Printf("Index: %s\n", status.Path)
 	fmt.Printf("Sessions: %d\n", status.TotalSessions)
 	fmt.Printf("Messages: %d\n", status.TotalMessages)
-	fmt.Printf("Size: %s\n", formatBytes(status.IndexSizeBytes))
+	fmt.Printf("Size: %s\n", output.FormatBytes(status.IndexSizeBytes))
 	if !status.LastSyncTime.IsZero() {
 		fmt.Printf("Last sync: %s\n", output.FormatAge(status.LastSyncTime))
 	}
@@ -121,6 +150,9 @@ func formatSyncResult(r *index.SyncResult) string {
 	if r.Updated > 0 {
 		parts = append(parts, fmt.Sprintf("%d updated", r.Updated))
 	}
+	if r.Adopted > 0 {
+		parts = append(parts, fmt.Sprintf("%d adopted", r.Adopted))
+	}
 	if r.Deleted > 0 {
 		parts = append(parts, fmt.Sprintf("%d deleted", r.Deleted))
 	}
@@ -128,18 +160,8 @@ func formatSyncResult(r *index.SyncResult) string {
 	if r.Unchanged > 0 {
 		summary += fmt.Sprintf(" (%d unchanged)", r.Unchanged)
 	}
+	if r.Adopted > 0 {
+		summary += "\nRun `cct backup status` to see which sessions live in your backup tree."
+	}
 	return summary
-}
-
-func formatBytes(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

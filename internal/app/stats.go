@@ -37,7 +37,7 @@ type agentStat struct {
 }
 
 func (cmd *StatsCmd) Run(globals *Globals) error {
-	files := session.DiscoverFiles("", cmd.Agents)
+	files := session.DiscoverFilesWithBackups("", cmd.Agents)
 	if !globals.JSON && len(files) > 50 {
 		fmt.Fprintf(os.Stderr, "Scanning %d sessions...\n", len(files))
 	}

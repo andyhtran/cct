@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/kong"
 	"github.com/andyhtran/cct/internal/index"
 )
 
@@ -650,6 +651,16 @@ func TestFormatSyncResult(t *testing.T) {
 			&index.SyncResult{Added: 5},
 			"Synced 5 new",
 		},
+		{
+			"only adopted",
+			&index.SyncResult{Adopted: 1, Unchanged: 99},
+			"Synced 1 adopted (99 unchanged)\nRun `cct backup status` to see which sessions live in your backup tree.",
+		},
+		{
+			"adopted with others",
+			&index.SyncResult{Added: 1, Updated: 2, Adopted: 3, Deleted: 4, Unchanged: 90},
+			"Synced 1 new, 2 updated, 3 adopted, 4 deleted (90 unchanged)\nRun `cct backup status` to see which sessions live in your backup tree.",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -699,5 +710,19 @@ func TestExitError(t *testing.T) {
 	err := &ExitError{Code: 42}
 	if err.Error() != "exit status 42" {
 		t.Errorf("Error() = %q, want %q", err.Error(), "exit status 42")
+	}
+}
+
+// TestCLIConstruction runs kong's struct validation (short-flag uniqueness,
+// arg/flag conflicts). Handler tests call Run methods directly and never
+// touch the kong tree, so a duplicate short flag on any subcommand would
+// reach users before any test noticed. This catches that class of regression.
+func TestCLIConstruction(t *testing.T) {
+	var cli CLI
+	if _, err := kong.New(&cli,
+		kong.Name("cct"),
+		kong.Vars{"version": "cct test"},
+	); err != nil {
+		t.Fatalf("kong.New failed: %v", err)
 	}
 }

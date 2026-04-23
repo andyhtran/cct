@@ -9,12 +9,43 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/andyhtran/cct/internal/backup"
 	"github.com/andyhtran/cct/internal/output"
+	"github.com/andyhtran/cct/internal/paths"
 	"github.com/andyhtran/cct/internal/session"
 )
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// checkBackupOnly warns when the session was resolved through the backup
+// mirror because the live JSONL is gone. DiscoverFilesWithBackups lets live
+// paths win, so a FilePath under BackupProjectsDir means live is (or was)
+// missing — but the index can lag behind a just-completed restore, so we
+// re-stat the canonical source path before nudging. Manifest load errors
+// collapse to "not in backup" — a parse failure should never block the user
+// from trying `claude --resume` directly. Any stat error other than
+// ErrNotExist also falls through: resume isn't the place to surface
+// permission or FS issues.
+func checkBackupOnly(match *session.Session) error {
+	if !strings.HasPrefix(match.FilePath, paths.BackupProjectsDir()) {
+		return nil
+	}
+	manifest, _ := backup.LoadManifest(paths.BackupManifestPath())
+	entry, ok := manifest.Entries[match.ID]
+	if !ok {
+		return nil
+	}
+	if _, err := os.Stat(entry.SourcePath); !os.IsNotExist(err) {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr,
+		"Session %s is preserved in your cct backup but missing from\n"+
+			"~/.claude/projects/. Restore it first:\n\n"+
+			"    cct backup restore %s\n",
+		match.ShortID, match.ID)
+	return &ExitError{Code: 1}
 }
 
 type ResumeCmd struct {
@@ -25,6 +56,10 @@ type ResumeCmd struct {
 func (cmd *ResumeCmd) Run(globals *Globals) error {
 	match, err := session.FindByPrefixFull(cmd.ID)
 	if err != nil {
+		return err
+	}
+
+	if err := checkBackupOnly(match); err != nil {
 		return err
 	}
 

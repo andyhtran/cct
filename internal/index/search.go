@@ -97,7 +97,7 @@ func compoundTerms(query string) []string {
 }
 
 func (idx *Index) substringSearch(opts SearchOptions) []SearchResult {
-	toSearch := session.DiscoverFiles(opts.ProjectFilter, opts.IncludeAgents)
+	toSearch := session.DiscoverFilesWithBackups(opts.ProjectFilter, opts.IncludeAgents)
 	if len(toSearch) == 0 {
 		return nil
 	}

@@ -200,6 +200,59 @@ func TestDiscoverFiles_NestedSubagents(t *testing.T) {
 	})
 }
 
+func TestDiscoverFilesWithBackups(t *testing.T) {
+	home := setupTestHome(t)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	// Live session in projects dir.
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+	writeSessionFile(t, projDir, "aaaa1111-2222-3333-4444-555555555555", []string{
+		`{"type":"user","message":{"role":"user","content":"live session"}}`,
+	})
+
+	// Adopted session: lives only in the backup mirror, not the live tree.
+	// Mirrors the state after an upstream cleanup has wiped the source.
+	backupProj := filepath.Join(home, ".cache", "cct", "backup", "projects", "-Users-test-myproject")
+	writeSessionFile(t, backupProj, "bbbb2222-3333-4444-5555-666666666666", []string{
+		`{"type":"user","message":{"role":"user","content":"adopted session"}}`,
+	})
+
+	// Dup session: present in both trees. Live path must win in the dedupe.
+	writeSessionFile(t, projDir, "cccc3333-4444-5555-6666-777777777777", []string{
+		`{"type":"user","message":{"role":"user","content":"live wins"}}`,
+	})
+	writeSessionFile(t, backupProj, "cccc3333-4444-5555-6666-777777777777", []string{
+		`{"type":"user","message":{"role":"user","content":"backup stale"}}`,
+	})
+
+	files := DiscoverFilesWithBackups("", true)
+	if len(files) != 3 {
+		t.Fatalf("expected 3 unique sessions, got %d: %v", len(files), files)
+	}
+
+	var sawAdopted, sawDupLive bool
+	for _, p := range files {
+		if strings.HasSuffix(p, "bbbb2222-3333-4444-5555-666666666666.jsonl") {
+			if !strings.Contains(p, ".cache") {
+				t.Errorf("adopted session should be the backup path, got %s", p)
+			}
+			sawAdopted = true
+		}
+		if strings.HasSuffix(p, "cccc3333-4444-5555-6666-777777777777.jsonl") {
+			if strings.Contains(p, ".cache") {
+				t.Errorf("duplicated session should resolve to the live path, got %s", p)
+			}
+			sawDupLive = true
+		}
+	}
+	if !sawAdopted {
+		t.Error("adopted (backup-only) session missing from results")
+	}
+	if !sawDupLive {
+		t.Error("duplicated session did not resolve to the live path")
+	}
+}
+
 func TestDiscoverFiles_MissingDir(t *testing.T) {
 	home := setupTestHome(t)
 	_ = home

@@ -20,8 +20,36 @@ import (
 // Claude Code moved subagents from the flat layout to the nested one at some
 // point; both can coexist. Nested scanning only runs when includeAgents=true,
 // since every nested entry is an agent by construction.
+//
+// Returns live files only — the backup mirror is not included. User-facing
+// lookup paths should call DiscoverFilesWithBackups instead so adopted
+// sessions remain findable after upstream deletion.
 func DiscoverFiles(projectFilter string, includeAgents bool) []string {
-	dir := paths.ProjectsDir()
+	return discoverAt(paths.ProjectsDir(), projectFilter, includeAgents)
+}
+
+// DiscoverFilesWithBackups unions the live tree with cct's backup mirror,
+// deduplicating by session ID (live path wins). This is what user-facing
+// lookup commands (info, resume, export, list, search) should use so a
+// session deleted by the upstream cleanup bug stays findable through the
+// backup copy.
+func DiscoverFilesWithBackups(projectFilter string, includeAgents bool) []string {
+	live := discoverAt(paths.ProjectsDir(), projectFilter, includeAgents)
+	seen := make(map[string]bool, len(live))
+	for _, p := range live {
+		seen[ExtractIDFromFilename(p)] = true
+	}
+	for _, bp := range discoverAt(paths.BackupProjectsDir(), projectFilter, includeAgents) {
+		id := ExtractIDFromFilename(bp)
+		if !seen[id] {
+			live = append(live, bp)
+			seen[id] = true
+		}
+	}
+	return live
+}
+
+func discoverAt(dir, projectFilter string, includeAgents bool) []string {
 	var files []string
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -92,8 +120,12 @@ func discoverNestedSubagents(sessionDir string) []string {
 	return out
 }
 
+// ScanAll returns Sessions from live + backup files. User-facing commands
+// (list, info, export, resume) need adopted sessions to stay findable, so
+// the backup mirror is included by default. Internal filesystem operations
+// that must see only live files should call DiscoverFiles directly.
 func ScanAll(projectFilter string, fullParse bool, includeAgents bool) []*Session {
-	files := DiscoverFiles(projectFilter, includeAgents)
+	files := DiscoverFilesWithBackups(projectFilter, includeAgents)
 	return ScanFiles(files, fullParse)
 }
 
