@@ -90,6 +90,16 @@ func printSessionTable(sessions []*session.Session, compact bool) {
 		if s.CustomTitle != "" {
 			prompt = "[" + s.CustomTitle + "] " + prompt
 		}
+		// For sub-agents, show the sidecar task title instead of the verbose
+		// delegation prompt. The description is a one-line summary and is
+		// far more scannable than the first 20 chars of the raw prompt.
+		if s.IsAgent && s.AgentType != "" {
+			summary := s.AgentDescription
+			if summary == "" {
+				summary = prompt
+			}
+			prompt = "[" + s.AgentType + "] " + summary
+		}
 		tbl.Row(
 			[]string{
 				s.ShortID,

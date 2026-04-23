@@ -22,12 +22,18 @@ type statsData struct {
 	ThisMonth      int           `json:"sessions_this_month"`
 	TopProjects    []projectStat `json:"top_projects"`
 	RecentProjects []projectStat `json:"recent_projects"`
+	AgentTypes     []agentStat   `json:"agent_types,omitempty"`
 }
 
 type projectStat struct {
 	Name     string `json:"name"`
 	Sessions int    `json:"sessions,omitempty"`
 	LastUsed string `json:"last_used,omitempty"`
+}
+
+type agentStat struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
 }
 
 func (cmd *StatsCmd) Run(globals *Globals) error {
@@ -48,6 +54,7 @@ func (cmd *StatsCmd) Run(globals *Globals) error {
 
 	projectCounts := make(map[string]int)
 	projectRecent := make(map[string]time.Time)
+	agentTypeCounts := make(map[string]int)
 	thisWeek := 0
 	thisMonth := 0
 
@@ -67,7 +74,26 @@ func (cmd *StatsCmd) Run(globals *Globals) error {
 		if s.Modified.After(monthAgo) {
 			thisMonth++
 		}
+		if s.IsAgent {
+			t := s.AgentType
+			if t == "" {
+				t = "(unknown)"
+			}
+			agentTypeCounts[t]++
+		}
 	}
+
+	type agentKV struct {
+		name  string
+		count int
+	}
+	var agentTypes []agentKV
+	for name, count := range agentTypeCounts {
+		agentTypes = append(agentTypes, agentKV{name, count})
+	}
+	sort.Slice(agentTypes, func(i, j int) bool {
+		return agentTypes[i].count > agentTypes[j].count
+	})
 
 	// Top projects by session count
 	type kv struct {
@@ -124,6 +150,9 @@ func (cmd *StatsCmd) Run(globals *Globals) error {
 				LastUsed: output.FormatAge(rv.when),
 			})
 		}
+		for _, a := range agentTypes {
+			data.AgentTypes = append(data.AgentTypes, agentStat{Type: a.name, Count: a.count})
+		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(data)
@@ -146,6 +175,15 @@ func (cmd *StatsCmd) Run(globals *Globals) error {
 	for _, rv := range recent[:recentN] {
 		fmt.Printf("    %s  %s\n", output.Pad(output.Truncate(rv.name, 30), 30, output.Bold), output.Dim(output.FormatAge(rv.when)+" ago"))
 	}
+
+	if len(agentTypes) > 0 {
+		fmt.Println()
+		fmt.Println("  " + output.Bold("Agent Types"))
+		for _, a := range agentTypes {
+			fmt.Printf("    %s  %s\n", output.Pad(output.Truncate(a.name, 30), 30, output.Bold), output.Dim(fmt.Sprintf("%d agents", a.count)))
+		}
+	}
+
 	fmt.Println()
 
 	return nil

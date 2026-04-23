@@ -13,8 +13,13 @@ import (
 	"github.com/andyhtran/cct/internal/paths"
 )
 
-// DiscoverFiles reads exactly one directory level deep under ~/.claude/projects/,
-// matching Claude Code's current storage layout: <projects>/<dir>/<file>.jsonl.
+// DiscoverFiles walks ~/.claude/projects/ at two depths:
+//   - flat parent sessions: <projects>/<projectDir>/<sessionID>.jsonl
+//   - nested subagents:     <projects>/<projectDir>/<parentSessionID>/subagents/agent-*.jsonl
+//
+// Claude Code moved subagents from the flat layout to the nested one at some
+// point; both can coexist. Nested scanning only runs when includeAgents=true,
+// since every nested entry is an agent by construction.
 func DiscoverFiles(projectFilter string, includeAgents bool) []string {
 	dir := paths.ProjectsDir()
 	var files []string
@@ -44,15 +49,47 @@ func DiscoverFiles(projectFilter string, includeAgents bool) []string {
 			continue
 		}
 		for _, f := range dirEntries {
-			if !f.IsDir() && strings.HasSuffix(f.Name(), ".jsonl") && f.Name() != "sessions-index.json" {
-				if !includeAgents && strings.HasPrefix(f.Name(), "agent-") {
+			name := f.Name()
+			if f.IsDir() {
+				if !includeAgents {
 					continue
 				}
-				files = append(files, filepath.Join(dirPath, f.Name()))
+				files = append(files, discoverNestedSubagents(filepath.Join(dirPath, name))...)
+				continue
 			}
+			if !strings.HasSuffix(name, ".jsonl") || name == "sessions-index.json" {
+				continue
+			}
+			if !includeAgents && strings.HasPrefix(name, "agent-") {
+				continue
+			}
+			files = append(files, filepath.Join(dirPath, name))
 		}
 	}
 	return files
+}
+
+// discoverNestedSubagents returns agent-*.jsonl paths under <sessionDir>/subagents/.
+// Sibling dirs like tool-results/ are intentionally ignored — only subagents/
+// holds session-shaped JSONL.
+func discoverNestedSubagents(sessionDir string) []string {
+	subDir := filepath.Join(sessionDir, "subagents")
+	entries, err := os.ReadDir(subDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, f := range entries {
+		if f.IsDir() {
+			continue
+		}
+		name := f.Name()
+		if !strings.HasPrefix(name, "agent-") || !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+		out = append(out, filepath.Join(subDir, name))
+	}
+	return out
 }
 
 func ScanAll(projectFilter string, fullParse bool, includeAgents bool) []*Session {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,6 +100,102 @@ func TestDiscoverFiles_AgentFiltering(t *testing.T) {
 		files := DiscoverFiles("", true)
 		if len(files) != 2 {
 			t.Errorf("expected 2 files (with agents), got %d", len(files))
+		}
+	})
+}
+
+func writeMetaSidecar(t *testing.T, dir, agentID, agentType, description string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, agentID+".meta.json")
+	body := fmt.Sprintf(`{"agentType":%q,"description":%q}`, agentType, description)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiscoverFiles_NestedSubagents(t *testing.T) {
+	home := setupTestHome(t)
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-myproject")
+
+	// Flat parent session.
+	writeSessionFile(t, projDir, "parent-aaaa-bbbb-cccc-dddd", []string{
+		`{"type":"user","message":{"role":"user","content":"parent prompt"},"cwd":"/test","sessionId":"parent-aaaa-bbbb-cccc-dddd"}`,
+	})
+
+	// Nested subagent: <projDir>/<parentID>/subagents/agent-<hex>.jsonl + sidecar.
+	parentDir := filepath.Join(projDir, "parent-aaaa-bbbb-cccc-dddd")
+	subagentDir := filepath.Join(parentDir, "subagents")
+	writeSessionFile(t, subagentDir, "agent-abcdef1234567890", []string{
+		`{"type":"user","message":{"role":"user","content":"nested agent prompt"},"cwd":"/test","isSidechain":true}`,
+	})
+	writeMetaSidecar(t, subagentDir, "agent-abcdef1234567890", "Explore", "Survey something")
+
+	// Sibling tool-results dir should be ignored entirely.
+	toolResultsDir := filepath.Join(parentDir, "tool-results")
+	if err := os.MkdirAll(toolResultsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolResultsDir, "foo.txt"), []byte("not a session"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("includeAgents=true picks up nested agent", func(t *testing.T) {
+		files := DiscoverFiles("", true)
+		if len(files) != 2 {
+			t.Fatalf("expected 2 files (parent + nested agent), got %d: %v", len(files), files)
+		}
+		var sawNested bool
+		for _, p := range files {
+			if strings.Contains(p, filepath.Join("subagents", "agent-abcdef1234567890.jsonl")) {
+				sawNested = true
+			}
+			if strings.HasSuffix(p, "foo.txt") {
+				t.Errorf("tool-results file leaked into results: %s", p)
+			}
+		}
+		if !sawNested {
+			t.Error("nested subagent jsonl not discovered")
+		}
+	})
+
+	t.Run("includeAgents=false excludes nested agent", func(t *testing.T) {
+		files := DiscoverFiles("", false)
+		if len(files) != 1 {
+			t.Fatalf("expected 1 file (parent only), got %d: %v", len(files), files)
+		}
+	})
+
+	t.Run("meta sidecar populates AgentType/AgentDescription", func(t *testing.T) {
+		nested := filepath.Join(subagentDir, "agent-abcdef1234567890.jsonl")
+		s := ExtractMetadata(nested)
+		if s == nil {
+			t.Fatal("ExtractMetadata returned nil")
+		}
+		if !s.IsAgent {
+			t.Error("IsAgent = false, want true")
+		}
+		if s.AgentType != "Explore" {
+			t.Errorf("AgentType = %q, want Explore", s.AgentType)
+		}
+		if s.AgentDescription != "Survey something" {
+			t.Errorf("AgentDescription = %q, want Survey something", s.AgentDescription)
+		}
+	})
+
+	t.Run("missing sidecar leaves fields empty", func(t *testing.T) {
+		// Write a nested agent without a meta sidecar — should parse cleanly.
+		writeSessionFile(t, subagentDir, "agent-nometa9999", []string{
+			`{"type":"user","message":{"role":"user","content":"bare"},"cwd":"/test"}`,
+		})
+		s := ExtractMetadata(filepath.Join(subagentDir, "agent-nometa9999.jsonl"))
+		if s == nil {
+			t.Fatal("ExtractMetadata returned nil")
+		}
+		if s.AgentType != "" || s.AgentDescription != "" {
+			t.Errorf("expected empty agent fields, got type=%q desc=%q", s.AgentType, s.AgentDescription)
 		}
 	})
 }

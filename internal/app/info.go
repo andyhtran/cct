@@ -35,6 +35,13 @@ func (cmd *InfoCmd) Run(globals *Globals) error {
 	if match.CustomTitle != "" {
 		fmt.Printf("  %s    %s\n", output.Dim("Title:"), output.Bold(match.CustomTitle))
 	}
+	if match.IsAgent && match.AgentType != "" {
+		line := output.Bold(match.AgentType)
+		if match.AgentDescription != "" {
+			line += output.Dim(" — ") + match.AgentDescription
+		}
+		fmt.Printf("  %s    %s\n", output.Dim("Agent:"), line)
+	}
 	if match.ProjectPath != "" {
 		fmt.Printf("  %s  %s\n", output.Dim("Project:"), output.Bold(match.ProjectPath))
 	}

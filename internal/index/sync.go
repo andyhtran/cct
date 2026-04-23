@@ -309,11 +309,12 @@ func (idx *Index) insertSession(tx *sql.Tx, s *indexedSession) error {
 
 	_, err := tx.Exec(`
 		INSERT OR REPLACE INTO sessions (id, file_path, project_dir, project_name, project_path, is_agent, modified_at, file_size,
-			first_prompt, created_at, git_branch, message_count, custom_title)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			first_prompt, created_at, git_branch, message_count, custom_title, agent_type, agent_description)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, sess.ID, sess.FilePath, projectDir, sess.ProjectName, sess.ProjectPath, boolToInt(sess.IsAgent),
 		sess.Modified.Format(time.RFC3339), s.fileSize,
-		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount, sess.CustomTitle)
+		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount, sess.CustomTitle,
+		sess.AgentType, sess.AgentDescription)
 	if err != nil {
 		return err
 	}
@@ -336,6 +337,32 @@ func (idx *Index) insertSession(tx *sql.Tx, s *indexedSession) error {
 			INSERT INTO content_fts (rowid, text)
 			VALUES (?, ?)
 		`, rowID, m.text)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Index the agent sidecar description so search can hit agents by their
+	// task title, which is often absent from the JSONL body. byte_offset=0
+	// and byte_length=0 flag this as a synthetic row — the snippet path
+	// reads text from the session row's agent_description column instead of
+	// the file.
+	if sess.AgentDescription != "" {
+		res, err := tx.Exec(`
+			INSERT INTO content_map (session_id, role, source, byte_offset, byte_length)
+			VALUES (?, 'description', 'agent', 0, 0)
+		`, sess.ID)
+		if err != nil {
+			return err
+		}
+		rowID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			INSERT INTO content_fts (rowid, text)
+			VALUES (?, ?)
+		`, rowID, sess.AgentDescription)
 		if err != nil {
 			return err
 		}
@@ -435,6 +462,7 @@ func indexSession(path string) (*indexedSession, error) {
 	}
 	s.ShortID = session.ShortID(s.ID)
 	s.IsAgent = session.IsAgentSession(s.ID)
+	session.LoadAgentMeta(s, path)
 
 	scanner := session.NewOffsetScanner(f)
 	var messages []indexedMessage
