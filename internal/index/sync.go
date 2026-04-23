@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/andyhtran/cct/internal/backup"
 	"github.com/andyhtran/cct/internal/session"
 )
 
@@ -42,12 +43,13 @@ type indexedSession struct {
 type SyncResult struct {
 	Added     int
 	Updated   int
+	Adopted   int
 	Deleted   int
 	Unchanged int
 }
 
 func (r *SyncResult) UpToDate() bool {
-	return r.Added == 0 && r.Updated == 0 && r.Deleted == 0
+	return r.Added == 0 && r.Updated == 0 && r.Adopted == 0 && r.Deleted == 0
 }
 
 const (
@@ -101,10 +103,27 @@ func (idx *Index) syncLocked(includeAgents bool, progress io.Writer) (*SyncResul
 		unchanged = 0
 	}
 
+	// Same session ID moving between live and backup paths lands in both
+	// toDelete (old path) and toAdd (new path). The DB write is an
+	// INSERT OR REPLACE under the same session ID, so the row is rescued
+	// rather than deleted — report it as "adopted" so the count reflects
+	// reality.
+	deletedIDs := make(map[string]bool, len(toDelete))
+	for _, p := range toDelete {
+		deletedIDs[session.ExtractIDFromFilename(p)] = true
+	}
+	adopted := 0
+	for _, p := range toAdd {
+		if deletedIDs[session.ExtractIDFromFilename(p)] {
+			adopted++
+		}
+	}
+
 	result := &SyncResult{
-		Added:     len(toAdd),
+		Added:     len(toAdd) - adopted,
 		Updated:   len(toUpdate),
-		Deleted:   len(toDelete),
+		Adopted:   adopted,
+		Deleted:   len(toDelete) - adopted,
 		Unchanged: unchanged,
 	}
 
@@ -143,10 +162,31 @@ func (idx *Index) syncLocked(includeAgents bool, progress io.Writer) (*SyncResul
 	return result, nil
 }
 
+// discoverCurrentFiles returns every JSONL file we should index. Live files
+// under ~/.claude/projects/ are primary; backup files under the cct cache
+// dir are secondary. When the same session ID appears in both (the normal
+// post-backup state), the live path wins so the index tracks writes at their
+// source. When a live file has been cleaned up by Claude Code, the backup
+// path stands in — that's the whole point of the backup: the session stays
+// searchable even after upstream deletion.
 func discoverCurrentFiles(includeAgents bool) map[string]fileInfo {
-	files := session.DiscoverFiles("", includeAgents)
-	current := make(map[string]fileInfo, len(files))
-	for _, path := range files {
+	live := session.DiscoverFiles("", includeAgents)
+	backups := backup.DiscoverBackupSources()
+
+	chosen := make(map[string]string, len(live)+len(backups))
+	for _, path := range live {
+		id := session.ExtractIDFromFilename(path)
+		chosen[id] = path
+	}
+	for _, path := range backups {
+		id := session.ExtractIDFromFilename(path)
+		if _, ok := chosen[id]; !ok {
+			chosen[id] = path
+		}
+	}
+
+	current := make(map[string]fileInfo, len(chosen))
+	for _, path := range chosen {
 		info, err := os.Stat(path)
 		if err != nil {
 			continue
@@ -309,11 +349,12 @@ func (idx *Index) insertSession(tx *sql.Tx, s *indexedSession) error {
 
 	_, err := tx.Exec(`
 		INSERT OR REPLACE INTO sessions (id, file_path, project_dir, project_name, project_path, is_agent, modified_at, file_size,
-			first_prompt, created_at, git_branch, message_count, custom_title)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			first_prompt, created_at, git_branch, message_count, custom_title, agent_type, agent_description)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, sess.ID, sess.FilePath, projectDir, sess.ProjectName, sess.ProjectPath, boolToInt(sess.IsAgent),
 		sess.Modified.Format(time.RFC3339), s.fileSize,
-		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount, sess.CustomTitle)
+		sess.FirstPrompt, createdAt, sess.GitBranch, sess.MessageCount, sess.CustomTitle,
+		sess.AgentType, sess.AgentDescription)
 	if err != nil {
 		return err
 	}
@@ -336,6 +377,32 @@ func (idx *Index) insertSession(tx *sql.Tx, s *indexedSession) error {
 			INSERT INTO content_fts (rowid, text)
 			VALUES (?, ?)
 		`, rowID, m.text)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Index the agent sidecar description so search can hit agents by their
+	// task title, which is often absent from the JSONL body. byte_offset=0
+	// and byte_length=0 flag this as a synthetic row — the snippet path
+	// reads text from the session row's agent_description column instead of
+	// the file.
+	if sess.AgentDescription != "" {
+		res, err := tx.Exec(`
+			INSERT INTO content_map (session_id, role, source, byte_offset, byte_length)
+			VALUES (?, 'description', 'agent', 0, 0)
+		`, sess.ID)
+		if err != nil {
+			return err
+		}
+		rowID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
+			INSERT INTO content_fts (rowid, text)
+			VALUES (?, ?)
+		`, rowID, sess.AgentDescription)
 		if err != nil {
 			return err
 		}
@@ -435,6 +502,7 @@ func indexSession(path string) (*indexedSession, error) {
 	}
 	s.ShortID = session.ShortID(s.ID)
 	s.IsAgent = session.IsAgentSession(s.ID)
+	session.LoadAgentMeta(s, path)
 
 	scanner := session.NewOffsetScanner(f)
 	var messages []indexedMessage

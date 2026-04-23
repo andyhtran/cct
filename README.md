@@ -87,6 +87,20 @@ use cct to find sessions where we debugged the auth issue
 
 This turns your session history into a searchable knowledge base that Claude can query.
 
+## Preserving session history
+
+Claude Code occasionally wipes session files in `~/.claude/projects/` — see upstream issues [#41458](https://github.com/anthropics/claude-code/issues/41458), [#23710](https://github.com/anthropics/claude-code/issues/23710), and [#20992](https://github.com/anthropics/claude-code/issues/20992). `cct backup` hardlinks your `~/.claude/projects/**/*.jsonl` files into `~/.cache/cct/backup/` so session history survives those cleanups. Hardlinks mean the backup costs near-zero disk (the live file and the backup point at the same inode), and drift is detected if the live file is replaced.
+
+```bash
+cct backup sweep     # Hardlink every session file into the backup tree
+cct backup status    # Per-session drift report (backed-up / drifted / orphaned)
+cct backup restore <id>  # Copy a backup back to ~/.claude/projects/
+```
+
+`cct` never modifies `~/.claude/settings.json`. Backup is a manual command — automate it with cron or launchd if you want hands-off.
+
+Backups are per-machine — they track local inodes and absolute paths. Don't sync `~/.cache/cct/` across machines.
+
 ## Looking up Claude Code features
 
 `cct changelog` mirrors the upstream [CHANGELOG.md](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) locally (cached for 6h) and makes it searchable:

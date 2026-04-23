@@ -11,7 +11,7 @@ import (
 // mismatch is resolved by dropping all tables and letting the next Sync()
 // repopulate from disk. Adding a new field becomes: edit schemaSQL, bump
 // this constant.
-const schemaVersion = 7
+const schemaVersion = 9
 
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 	created_at TEXT,
 	git_branch TEXT,
 	message_count INTEGER NOT NULL DEFAULT 0,
-	custom_title TEXT
+	custom_title TEXT,
+	agent_type TEXT,
+	agent_description TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_dir);

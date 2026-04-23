@@ -493,6 +493,63 @@ func writeTestSession(t *testing.T, projDir, id string, lines []string) {
 	_ = f.Close()
 }
 
+func TestIndex_NestedSubagent_MetaSync(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+
+	projDir := filepath.Join(home, ".claude", "projects", "-Users-test-nested")
+	parentID := "parent11-2222-3333-4444-555555555555"
+	parentDir := filepath.Join(projDir, parentID)
+	subagentDir := filepath.Join(parentDir, "subagents")
+	if err := os.MkdirAll(subagentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestSession(t, projDir, parentID, []string{
+		`{"type":"user","message":{"role":"user","content":"parent prompt"},"cwd":"/Users/test/nested","sessionId":"` + parentID + `","timestamp":"2026-02-01T08:00:00Z"}`,
+	})
+
+	agentID := "agent-deadbeef01234567"
+	writeTestSession(t, subagentDir, agentID, []string{
+		`{"type":"user","message":{"role":"user","content":"nested subagent task"},"cwd":"/Users/test/nested","isSidechain":true,"timestamp":"2026-02-01T08:00:10Z"}`,
+	})
+	sidecarPath := filepath.Join(subagentDir, agentID+".meta.json")
+	sidecar := `{"agentType":"Explore","description":"Survey the codebase"}`
+	if err := os.WriteFile(sidecarPath, []byte(sidecar), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+
+	if err := idx.ForceSync(true); err != nil {
+		t.Fatal(err)
+	}
+
+	var agentType, agentDescription sql.NullString
+	var isAgent int
+	err = idx.db.QueryRow(
+		"SELECT is_agent, agent_type, agent_description FROM sessions WHERE id = ?",
+		agentID,
+	).Scan(&isAgent, &agentType, &agentDescription)
+	if err != nil {
+		t.Fatalf("nested subagent row missing: %v", err)
+	}
+	if isAgent != 1 {
+		t.Errorf("is_agent = %d, want 1", isAgent)
+	}
+	if !agentType.Valid || agentType.String != "Explore" {
+		t.Errorf("agent_type = %v, want Explore", agentType)
+	}
+	if !agentDescription.Valid || agentDescription.String != "Survey the codebase" {
+		t.Errorf("agent_description = %v, want %q", agentDescription, "Survey the codebase")
+	}
+}
+
 func TestSearch_CrossMessageMultiTerm(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -588,8 +645,8 @@ func TestOpen_CorruptionRecovery(t *testing.T) {
 	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Errorf("expected schema version 7 after recovery, got %d", version)
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d after recovery, got %d", schemaVersion, version)
 	}
 }
 
@@ -613,8 +670,8 @@ func TestEnsureSchema_FreshDB(t *testing.T) {
 	if err := idx.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 7 {
-		t.Errorf("expected schema version 7, got %d", version)
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d, got %d", schemaVersion, version)
 	}
 
 	var count int

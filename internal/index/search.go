@@ -20,6 +20,9 @@ type snippetLocation struct {
 	source     string
 	byteOffset int64
 	byteLength int
+	// inlineText is populated for synthetic rows (role="description") whose
+	// source text lives on the sessions row, not in the JSONL file.
+	inlineText string
 }
 
 type SearchOptions struct {
@@ -94,7 +97,7 @@ func compoundTerms(query string) []string {
 }
 
 func (idx *Index) substringSearch(opts SearchOptions) []SearchResult {
-	toSearch := session.DiscoverFiles(opts.ProjectFilter, opts.IncludeAgents)
+	toSearch := session.DiscoverFilesWithBackups(opts.ProjectFilter, opts.IncludeAgents)
 	if len(toSearch) == 0 {
 		return nil
 	}
@@ -190,7 +193,7 @@ func (idx *Index) ftsSearch(opts SearchOptions) ([]SearchResult, int, error) {
 				s.id, s.file_path, s.project_name, s.project_path,
 				s.is_agent, s.modified_at,
 				s.first_prompt, s.created_at, s.git_branch, s.message_count,
-				s.custom_title,
+				s.custom_title, s.agent_type, s.agent_description,
 				m.match_count
 			FROM sessions s
 			JOIN matches m ON s.id = m.session_id
@@ -234,7 +237,7 @@ func (idx *Index) ftsSearch(opts SearchOptions) ([]SearchResult, int, error) {
 				s.id, s.file_path, s.project_name, s.project_path,
 				s.is_agent, s.modified_at,
 				s.first_prompt, s.created_at, s.git_branch, s.message_count,
-				s.custom_title,
+				s.custom_title, s.agent_type, s.agent_description,
 				m.match_count
 			FROM sessions s
 			JOIN matches m ON s.id = m.session_id
@@ -309,11 +312,12 @@ func (idx *Index) scanSessionRows(query string, args []any) ([]string, map[strin
 
 	for rows.Next() {
 		var id, filePath, projectName, projectPath, modifiedStr string
-		var firstPrompt, createdAtStr, gitBranch, customTitle sql.NullString
+		var firstPrompt, createdAtStr, gitBranch, customTitle, agentType, agentDescription sql.NullString
 		var isAgent, messageCount, matchCount int
 
 		if err := rows.Scan(&id, &filePath, &projectName, &projectPath, &isAgent, &modifiedStr,
-			&firstPrompt, &createdAtStr, &gitBranch, &messageCount, &customTitle, &matchCount); err != nil {
+			&firstPrompt, &createdAtStr, &gitBranch, &messageCount, &customTitle,
+			&agentType, &agentDescription, &matchCount); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
@@ -325,18 +329,20 @@ func (idx *Index) scanSessionRows(query string, args []any) ([]string, map[strin
 		}
 
 		sess := &session.Session{
-			ID:           id,
-			ShortID:      session.ShortID(id),
-			IsAgent:      isAgent == 1,
-			ProjectPath:  projectPath,
-			ProjectName:  projectName,
-			FilePath:     filePath,
-			Modified:     modified,
-			FirstPrompt:  firstPrompt.String,
-			CustomTitle:  customTitle.String,
-			Created:      created,
-			GitBranch:    gitBranch.String,
-			MessageCount: messageCount,
+			ID:               id,
+			ShortID:          session.ShortID(id),
+			IsAgent:          isAgent == 1,
+			ProjectPath:      projectPath,
+			ProjectName:      projectName,
+			FilePath:         filePath,
+			Modified:         modified,
+			FirstPrompt:      firstPrompt.String,
+			CustomTitle:      customTitle.String,
+			Created:          created,
+			GitBranch:        gitBranch.String,
+			MessageCount:     messageCount,
+			AgentType:        agentType.String,
+			AgentDescription: agentDescription.String,
 		}
 
 		sessionIDs = append(sessionIDs, id)
@@ -369,7 +375,8 @@ func (idx *Index) batchGetSnippets(sessionIDs []string, ftsQuery string, maxPerS
 	args[len(sessionIDs)] = ftsQuery
 
 	query := `
-		SELECT m.session_id, s.file_path, m.role, m.source, m.byte_offset, m.byte_length
+		SELECT m.session_id, s.file_path, m.role, m.source, m.byte_offset, m.byte_length,
+		       COALESCE(s.agent_description, '')
 		FROM content_map m
 		JOIN sessions s ON m.session_id = s.id
 		WHERE m.session_id IN (` + strings.Join(placeholders, ",") + `)
@@ -386,8 +393,12 @@ func (idx *Index) batchGetSnippets(sessionIDs []string, ftsQuery string, maxPerS
 	var locations []snippetLocation
 	for rows.Next() {
 		var loc snippetLocation
-		if err := rows.Scan(&loc.sessionID, &loc.filePath, &loc.role, &loc.source, &loc.byteOffset, &loc.byteLength); err != nil {
+		var agentDesc string
+		if err := rows.Scan(&loc.sessionID, &loc.filePath, &loc.role, &loc.source, &loc.byteOffset, &loc.byteLength, &agentDesc); err != nil {
 			continue
+		}
+		if loc.role == "description" {
+			loc.inlineText = agentDesc
 		}
 		locations = append(locations, loc)
 	}
@@ -402,12 +413,49 @@ func (idx *Index) batchGetSnippets(sessionIDs []string, ftsQuery string, maxPerS
 	}
 	compounds := compoundTerms(originalQuery)
 
+	// Split synthetic (inline text) rows from file-backed rows so we only open
+	// files for rows that actually need them.
 	byFile := make(map[string][]snippetLocation)
+	var inline []snippetLocation
 	for _, loc := range locations {
+		if loc.inlineText != "" {
+			inline = append(inline, loc)
+			continue
+		}
 		byFile[loc.filePath] = append(byFile[loc.filePath], loc)
 	}
 
 	result := make(map[string][]session.Match)
+
+	addMatch := func(loc snippetLocation, text string) {
+		if len(result[loc.sessionID]) >= maxPerSession {
+			return
+		}
+		if len(compounds) > 0 {
+			textLower := strings.ToLower(text)
+			found := false
+			for _, ct := range compounds {
+				if strings.Contains(textLower, ct) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return
+			}
+		}
+		snippet := output.ExtractSnippet(text, firstTerm, width)
+		result[loc.sessionID] = append(result[loc.sessionID], session.Match{
+			Role:    loc.role,
+			Source:  loc.source,
+			Snippet: snippet,
+		})
+	}
+
+	for _, loc := range inline {
+		addMatch(loc, loc.inlineText)
+	}
+
 	for filePath, fileLocs := range byFile {
 		f, err := os.Open(filePath)
 		if err != nil {
@@ -417,32 +465,11 @@ func (idx *Index) batchGetSnippets(sessionIDs []string, ftsQuery string, maxPerS
 			if len(result[loc.sessionID]) >= maxPerSession {
 				continue
 			}
-
 			text, err := readTextAt(f, loc.byteOffset, loc.byteLength)
 			if err != nil {
 				continue
 			}
-
-			if len(compounds) > 0 {
-				textLower := strings.ToLower(text)
-				found := false
-				for _, ct := range compounds {
-					if strings.Contains(textLower, ct) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					continue
-				}
-			}
-
-			snippet := output.ExtractSnippet(text, firstTerm, width)
-			result[loc.sessionID] = append(result[loc.sessionID], session.Match{
-				Role:    loc.role,
-				Source:  loc.source,
-				Snippet: snippet,
-			})
+			addMatch(loc, text)
 		}
 		_ = f.Close()
 	}

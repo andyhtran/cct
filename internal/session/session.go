@@ -39,6 +39,11 @@ type Session struct {
 	ContextTokens     int    `json:"context_tokens,omitempty"`
 	PeakContextTokens int    `json:"peak_context_tokens,omitempty"`
 	TotalOutputTokens int    `json:"total_output_tokens,omitempty"`
+
+	// Subagent sidecar fields — populated from <projectDir>/<parentID>/subagents/agent-<id>.meta.json
+	// when present. Empty for flat legacy agents and for non-agent sessions.
+	AgentType        string `json:"agent_type,omitempty"`
+	AgentDescription string `json:"agent_description,omitempty"`
 }
 
 // ContextWindow returns the effective max context window for a model. Defaults

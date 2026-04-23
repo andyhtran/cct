@@ -32,3 +32,23 @@ func ChangelogCachePath() string {
 func ChangelogMetaPath() string {
 	return filepath.Join(CacheDir(), "changelog.meta.json")
 }
+
+// BackupDir holds hard-linked copies of JSONL session files. Mirrors the layout
+// of ProjectsDir() so restore is a reverse-link to the original path. Placed
+// under CacheDir() so hardlinks work against ProjectsDir() on the default
+// same-filesystem case.
+func BackupDir() string {
+	return filepath.Join(CacheDir(), "backup")
+}
+
+// BackupProjectsDir is the root under which <projectDir>/<sessionID>.jsonl
+// mirrors ~/.claude/projects.
+func BackupProjectsDir() string {
+	return filepath.Join(BackupDir(), "projects")
+}
+
+// BackupManifestPath records per-session backup state (inode, size, paths).
+// Separate from the SQLite index so the manifest survives index corruption.
+func BackupManifestPath() string {
+	return filepath.Join(BackupDir(), "manifest.json")
+}

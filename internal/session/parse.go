@@ -293,6 +293,30 @@ func ExtractUserMetadata(s *Session, obj map[string]any) bool {
 func ExtractMetadata(path string) *Session  { return parseSession(path, false) }
 func ParseFullSession(path string) *Session { return parseSession(path, true) }
 
+// LoadAgentMeta populates AgentType and AgentDescription from the sibling
+// <path>.meta.json sidecar that nested subagents carry. Silent on missing or
+// malformed sidecars — flat legacy agents have no sidecar, and a corrupt
+// sidecar shouldn't block discovery.
+func LoadAgentMeta(s *Session, path string) {
+	if !s.IsAgent {
+		return
+	}
+	metaPath := strings.TrimSuffix(path, ".jsonl") + ".meta.json"
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return
+	}
+	var meta struct {
+		AgentType   string `json:"agentType"`
+		Description string `json:"description"`
+	}
+	if json.Unmarshal(data, &meta) != nil {
+		return
+	}
+	s.AgentType = meta.AgentType
+	s.AgentDescription = meta.Description
+}
+
 // OffsetScanner wraps a reader to track byte offsets for each line.
 type OffsetScanner struct {
 	reader  *bufio.Reader
@@ -397,6 +421,7 @@ func parseSession(path string, full bool) *Session {
 	}
 	s.ShortID = ShortID(s.ID)
 	s.IsAgent = IsAgentSession(s.ID)
+	LoadAgentMeta(s, path)
 
 	scanner := NewJSONLScanner(f)
 
