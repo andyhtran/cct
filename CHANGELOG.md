@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.5.0] - 2026-04-23
 
 ### Added
 
@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `backup status`: per-session drift report classifying each session as `backed-up`, `drifted` (inode or size mismatch), `orphaned` (live file gone, backup preserved), or `not-backed-up` (live file present, no manifest entry). Prints summary counts and grouped listings; `--json` emits a structured per-session array.
 - `backup restore <id> [<id>...]`: reverse-links named backup entries to their original `~/.claude/projects/` paths. Session IDs are required positional args; `--dry-run` previews without writing.
 - `index sync`: adopts backup files as secondary sources — sessions deleted from the live tree but preserved in the backup remain searchable, and re-adopt the live path when restored.
+- Nested subagent discovery: walks `<projectDir>/<parentID>/subagents/agent-*.jsonl` alongside the flat layout and parses the matching `.meta.json` sidecar for agent type and task description. The task description is indexed into FTS so subagents are searchable by their task title, and agent type + task surface in `info`, `list`, and `stats` output.
 
 ## [1.4.0] - 2026-04-22
 
