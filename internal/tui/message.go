@@ -27,7 +27,7 @@ type Message struct {
 }
 
 func ParseMessages(r io.Reader) []Message {
-	scanner := session.NewJSONLScanner(r)
+	scanner := session.NewOffsetScanner(r)
 	var messages []Message
 
 	for scanner.Scan() {

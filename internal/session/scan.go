@@ -202,7 +202,7 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 	terms := strings.Fields(keyLower)
 	isPhrase := len(terms) <= 1
 
-	scanner := NewJSONLScanner(f)
+	scanner := NewOffsetScanner(f)
 
 	var matches []Match
 	var termSeen []bool
@@ -274,7 +274,9 @@ func searchOneFile(path, keyLower string, snippetWidth int, maxMatches int) *Sea
 			}
 		}
 	}
-	// scanner.Err() intentionally not checked — partial results are acceptable.
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "cct: search %s: %v\n", path, err)
+	}
 
 	if isPhrase {
 		if len(matches) == 0 {

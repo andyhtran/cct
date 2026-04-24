@@ -605,3 +605,44 @@ func TestOffsetScanner_NoTrailingNewline(t *testing.T) {
 		t.Errorf("Offset() = %d, want 0", got)
 	}
 }
+
+// A user message with many pasted images can exceed the old 4 MB bufio.Scanner
+// cap. Since Claude Code writes the seed cwd/gitBranch/prompt in that first
+// user line, a session would silently come back with no metadata. Synthesize a
+// 10 MB line and verify the parser still extracts metadata from it.
+func TestParseSession_LargeUserLine(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "huge.jsonl")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 10 MB of filler text inside the first user message's text block.
+	filler := strings.Repeat("x", 10*1024*1024)
+	line := `{"type":"user","cwd":"/Users/andy/Code/Demo","gitBranch":"main","timestamp":"2026-04-23T20:00:00Z","message":{"role":"user","content":[{"type":"text","text":"seed prompt ` + filler + `"}]}}` + "\n"
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"type":"assistant","timestamp":"2026-04-23T20:00:01Z","message":{"role":"assistant","model":"claude","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":10,"output_tokens":1}}}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	s := ParseFullSession(path)
+	if s == nil {
+		t.Fatal("ParseFullSession returned nil")
+	}
+	if s.ProjectPath != "/Users/andy/Code/Demo" {
+		t.Errorf("ProjectPath = %q, want /Users/andy/Code/Demo", s.ProjectPath)
+	}
+	if s.GitBranch != "main" {
+		t.Errorf("GitBranch = %q, want main", s.GitBranch)
+	}
+	if !strings.HasPrefix(s.FirstPrompt, "seed prompt ") {
+		t.Errorf("FirstPrompt = %q, want prefix \"seed prompt \"", s.FirstPrompt[:min(40, len(s.FirstPrompt))])
+	}
+	if s.MessageCount != 2 {
+		t.Errorf("MessageCount = %d, want 2 (user + assistant after the huge line)", s.MessageCount)
+	}
+}
