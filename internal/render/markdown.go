@@ -101,7 +101,7 @@ type message struct {
 }
 
 func parseMessages(r *os.File, opts Options) []message {
-	scanner := session.NewJSONLScanner(r)
+	scanner := session.NewOffsetScanner(r)
 	var messages []message
 
 	roles := map[string]bool{"user": true, "assistant": true}

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,8 +14,8 @@ import (
 )
 
 const (
-	scanInitBuf = 64 * 1024       // 64 KB initial scanner buffer
-	scanMaxBuf  = 4 * 1024 * 1024 // 4 MB max line size (sessions can have large tool outputs)
+	scanInitBuf = 64 * 1024         // 64 KB initial reader buffer
+	scanMaxLine = 512 * 1024 * 1024 // 512 MB per-line sanity cap; guards against runaway allocation on a corrupt file
 )
 
 var (
@@ -26,12 +28,6 @@ var (
 	typeUser      = []byte(`"type":"user"`)
 	typeAssistant = []byte(`"type":"assistant"`)
 )
-
-func NewJSONLScanner(r io.Reader) *bufio.Scanner {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, scanInitBuf), scanMaxBuf)
-	return scanner
-}
 
 func FastExtractType(line []byte) string {
 	if bytes.Contains(line, typeUser) {
@@ -318,6 +314,10 @@ func LoadAgentMeta(s *Session, path string) {
 }
 
 // OffsetScanner wraps a reader to track byte offsets for each line.
+// Unlike bufio.Scanner, there is no fixed line-length ceiling — the underlying
+// bufio.Reader.ReadBytes grows as needed. A per-line sanity cap (scanMaxLine)
+// fails a Scan if a line exceeds the cap, so a corrupt file with a runaway
+// line can't exhaust memory silently.
 type OffsetScanner struct {
 	reader  *bufio.Reader
 	offset  int64
@@ -334,14 +334,28 @@ func NewOffsetScanner(r io.Reader) *OffsetScanner {
 }
 
 // Scan advances to the next line, returning true if a line was read.
+// A line longer than scanMaxLine aborts the scan; Err() returns the reason.
 func (s *OffsetScanner) Scan() bool {
 	s.offset += int64(s.lineLen)
 	s.line, s.err = s.reader.ReadBytes('\n')
 	s.lineLen = len(s.line)
+	if len(s.line) > scanMaxLine {
+		s.err = fmt.Errorf("line at offset %d exceeds %d-byte cap", s.offset, scanMaxLine)
+		return false
+	}
 	if s.err != nil && len(s.line) == 0 {
 		return false
 	}
 	return true
+}
+
+// Err returns the first non-EOF error encountered by Scan. EOF is the normal
+// termination signal and returns nil.
+func (s *OffsetScanner) Err() error {
+	if s.err == nil || errors.Is(s.err, io.EOF) {
+		return nil
+	}
+	return s.err
 }
 
 // Bytes returns the current line (without trailing newline).
@@ -423,7 +437,7 @@ func parseSession(path string, full bool) *Session {
 	s.IsAgent = IsAgentSession(s.ID)
 	LoadAgentMeta(s, path)
 
-	scanner := NewJSONLScanner(f)
+	scanner := NewOffsetScanner(f)
 
 	// Metadata-only parse used to early-return on the first complete user
 	// message. Claude Code writes "custom-title" records after user messages
@@ -478,7 +492,11 @@ func parseSession(path string, full bool) *Session {
 			}
 		}
 	}
-	// scanner.Err() intentionally not checked — partial metadata is still useful.
+	// A scan error here means we stopped mid-file; partial metadata is still
+	// returned, but surface the reason so we don't silently drop sessions.
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "cct: parse %s: %v\n", path, err)
+	}
 
 	return s
 }

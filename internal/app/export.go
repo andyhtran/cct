@@ -161,7 +161,7 @@ type exportMessage struct {
 }
 
 func collectMessages(r io.Reader, roles map[string]bool, includeToolResults bool, searchFilter string, maxToolChars int) ([]exportMessage, exportStats) {
-	scanner := session.NewJSONLScanner(r)
+	scanner := session.NewOffsetScanner(r)
 	var messages []exportMessage
 	var stats exportStats
 	searchLower := strings.ToLower(searchFilter)
