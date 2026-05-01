@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
+
+	"github.com/andyhtran/cct/internal/skill"
 )
 
 type ExitError struct{ Code int }
@@ -33,6 +36,7 @@ type CLI struct {
 	Schema      SchemaCmd    `cmd:"" help:"Show CLI schema as JSON (for tooling)"`
 	Index       IndexCmd     `cmd:"" help:"Manage search index"`
 	Backup      BackupCmd    `cmd:"" help:"Back up session JSONL files (guards against upstream cleanup bugs).\n\nRun 'cct backup sweep' periodically (cron, shell hook, or manually).\ncct never modifies ~/.claude/settings.json."`
+	Skill       SkillCmd     `cmd:"" help:"Manage the cct Claude Code skill (install/uninstall/status/nudge)"`
 }
 
 type Globals struct {
@@ -63,7 +67,21 @@ func Run(version string) int {
 		return 1
 	}
 
+	// Skip skill side effects for `cct skill *` (would be circular) and for
+	// `cct schema` (output is consumed by tooling that expects clean stdout).
+	selected := ctx.Command()
+	skillSideEffects := !strings.HasPrefix(selected, "skill") && !strings.HasPrefix(selected, "schema")
+
+	if skillSideEffects {
+		skill.SyncQuiet()
+	}
+
 	err = ctx.Run(&cli.Globals, k)
+
+	if skillSideEffects {
+		skill.MaybeNudge(os.Stderr)
+	}
+
 	if err != nil {
 		var exitErr *ExitError
 		if errors.As(err, &exitErr) {

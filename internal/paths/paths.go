@@ -52,3 +52,34 @@ func BackupProjectsDir() string {
 func BackupManifestPath() string {
 	return filepath.Join(BackupDir(), "manifest.json")
 }
+
+// ClaudeSkillsDir is the user-global skills directory the Claude Code harness
+// scans at session start.
+func ClaudeSkillsDir() string {
+	return filepath.Join(ClaudeDir(), "skills")
+}
+
+// SkillLiveDir is the on-disk extraction of the embedded cct skill content.
+// Symlinked from SkillSymlinkPath() on install; safe to delete (regenerated
+// on next cct invocation).
+func SkillLiveDir() string {
+	return filepath.Join(CacheDir(), "skills", "cct")
+}
+
+// SkillSymlinkPath is where ~/.claude/skills/cct lives. Always a symlink to
+// SkillLiveDir() when managed by cct.
+func SkillSymlinkPath() string {
+	return filepath.Join(ClaudeSkillsDir(), "cct")
+}
+
+// SkillNudgeLastPath stores the unix timestamp of the most recent install
+// nudge so we can rate-limit it to once per 24h.
+func SkillNudgeLastPath() string {
+	return filepath.Join(CacheDir(), "skill-nudge-last")
+}
+
+// SkillNudgeDisabledPath, when present, suppresses the install nudge entirely
+// (set by `cct skill nudge off`).
+func SkillNudgeDisabledPath() string {
+	return filepath.Join(CacheDir(), "skill-nudge-disabled")
+}
