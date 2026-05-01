@@ -71,12 +71,13 @@ cct resume <id>         # cd to project dir and run claude --resume
 
 ## Use with Claude Code agents
 
-Add to your `CLAUDE.md` to let Claude search your session history:
+`cct skill install` ships a Claude Code skill that the harness auto-loads when you reference past sessions. The skill is embedded in the cct binary and updates with each `brew upgrade cct` — no manual file copying.
 
-```markdown
-Use `cct search <query>` to find relevant past sessions.
-Use `cct export <id> --full` to read full conversation context.
-Use `cct changelog --search <regex>` to look up Claude Code features, behavior changes, or disable flags.
+```bash
+cct skill install     # creates a symlink at ~/.claude/skills/cct
+cct skill status      # check install/sync/nudge state
+cct skill uninstall   # remove the symlink (live copy preserved)
+cct skill nudge off   # silence the install prompt
 ```
 
 Then prompt naturally:
@@ -85,7 +86,7 @@ Then prompt naturally:
 use cct to find sessions where we debugged the auth issue
 ```
 
-This turns your session history into a searchable knowledge base that Claude can query.
+The skill describes canonical workflows (search→export, list→info, JSON+jq pipelines) and explicit anti-patterns so agents prefer cct over `grep ~/.claude/projects/`. Until installed, cct prints a one-line install hint to stderr (rate-limited to once per 24h); run `cct skill nudge off` to silence.
 
 ## Preserving session history
 

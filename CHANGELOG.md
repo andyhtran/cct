@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `skill` command group: ship a Claude Code skill bundled in the cct binary so agents auto-discover the tool. `cct skill install` creates a symlink at `~/.claude/skills/cct/` pointing at `~/.cache/cct/skills/cct/`; the live copy auto-syncs from the embedded version on every cct invocation, so `brew upgrade cct` keeps the on-disk skill aligned with the binary. Idempotent with conflict detection — refuses to overwrite a foreign file or symlink.
+- `skill uninstall`: removes only the symlink, preserves the live copy for fast reinstall.
+- `skill status`: reports install state, symlink target, sync state (embedded vs. live hash), and nudge state. `--json` for tooling.
+- Install nudge: until the skill is installed, cct prints a one-line hint to stderr (rate-limited to once per 24h). `cct skill nudge on|off|status` controls it.
+- Skill content: SKILL.md plus `references/commands.md` and `references/search-syntax.md`. Workflows ordered by real-world frequency from session history; explicit anti-triggers (`grep ~/.claude/projects/`, the non-existent `cct show`); full JSON schemas for `stats`, `list`, and `search`.
+
 ## [1.5.1] - 2026-04-23
 
 ### Fixed
